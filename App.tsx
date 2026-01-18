@@ -195,7 +195,17 @@ const NotificationToast = () => {
 // 1. Home View (Stats)
 const HomeView = () => {
   const { stats, updateStats, data, showNotification } = useAppContext();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Helper to get local date string YYYY-MM-DD
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [activeCarModel, setActiveCarModel] = useState<string>(data.carModels[0]?.id || '');
   
   const chartData = useMemo(() => {
@@ -212,8 +222,7 @@ const HomeView = () => {
   }, [stats, selectedDate, data.carModels]);
 
   const checkEditable = () => {
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getTodayStr();
     if (selectedDate !== todayStr) {
        showNotification("只能编辑今日的统计数据", "error");
        return false;
@@ -310,7 +319,7 @@ const HomeView = () => {
         </div>
         
         <p className="text-xs text-slate-400 text-center">
-          选择车型查看和添加异常问题 (每日凌晨2点自动初始化)
+          选择车型查看和添加异常问题 (每日0点自动初始化)
         </p>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-6">
@@ -436,10 +445,14 @@ ${findCode(form.productCodeId)}
 
     const content = generateText();
     const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
     
     addHistory({
       timestamp: Date.now(),
-      dateStr: now.toISOString().split('T')[0],
+      dateStr: dateStr,
       timeStr: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
       content,
       formData: form
@@ -623,7 +636,9 @@ const HistoryView = () => {
   const exportJSON = () => {
     const jsonStr = JSON.stringify(history, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
-    handleExport(`history-${new Date().toISOString().split('T')[0]}.json`, blob);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    handleExport(`history-${dateStr}.json`, blob);
   };
 
   const exportExcel = () => {
@@ -660,7 +675,9 @@ const HistoryView = () => {
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     
-    handleExport(`质量反馈记录-${new Date().toISOString().split('T')[0]}.xlsx`, blob);
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    handleExport(`质量反馈记录-${dateStr}.xlsx`, blob);
   };
 
   return (
