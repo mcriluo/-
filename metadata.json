@@ -1,0 +1,5 @@
+{
+  "name": "Copy of 质量异常反馈生成器",
+  "description": "用于生成标准化质量异常反馈文本、管理数据字典和跟踪问题统计的工具。",
+  "requestFramePermissions": []
+}
