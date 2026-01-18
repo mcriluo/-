@@ -14,7 +14,8 @@ import {
   FileSpreadsheet, 
   Calendar as CalendarIcon, 
   Search, 
-  X
+  X,
+  Minus
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
@@ -226,11 +227,10 @@ const HomeView = () => {
     updateStats(selectedDate, activeCarModel, issueId, 1);
   };
 
-  const handleReset = (issueId: string) => {
+  const handleDecrement = (issueId: string) => {
     if (!activeCarModel) return;
     if (!checkEditable()) return;
-    const current = stats[selectedDate]?.[activeCarModel]?.[issueId] || 0;
-    updateStats(selectedDate, activeCarModel, issueId, -current);
+    updateStats(selectedDate, activeCarModel, issueId, -1);
   };
 
   const getIssueCount = (issueId: string) => {
@@ -325,10 +325,10 @@ const HomeView = () => {
                   <span>{item.name}</span>
                   {item.count > 1 && <span className="text-indigo-200 text-xs">x{item.count}</span>}
                   <button 
-                    onClick={() => handleReset(item.id)}
+                    onClick={() => handleDecrement(item.id)}
                     className="p-0.5 hover:bg-white/20 rounded-full transition-colors"
                   >
-                    <X size={14} />
+                    <Minus size={14} />
                   </button>
                 </div>
               ))}
@@ -797,11 +797,22 @@ const Editor = <T extends BaseEntity>({
 
   const handleAdd = () => {
     if (!newName.trim()) return;
+    
+    // Check duplicates in the current scope
+    const trimmedName = newName.trim();
+    const siblings = items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent);
+    const isDuplicate = siblings.some(i => (i.name || (i as any).code) === trimmedName);
+
+    if (isDuplicate) {
+        showNotification("该名称已存在，请勿重复添加", "error");
+        return;
+    }
+
     if (parentIdKey && !selectedParent) {
        showNotification("请选择上级分类", "error");
        return;
     }
-    onAdd(newName, selectedParent);
+    onAdd(trimmedName, selectedParent);
     setNewName('');
     showNotification("添加成功");
   };
