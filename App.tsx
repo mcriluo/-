@@ -40,6 +40,7 @@ interface AppContextType {
   clearHistory: () => void;
   stats: DailyStats;
   updateStats: (date: string, carModelId: string, issueId: string, delta: number) => void;
+  clearStatsForDate: (date: string) => void;
   notification: { msg: string; type: 'success' | 'error' } | null;
   showNotification: (msg: string, type?: 'success' | 'error') => void;
   hideNotification: () => void;
@@ -82,6 +83,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     });
   }, []);
 
+  const clearStatsForDate = useCallback((date: string) => {
+    setStats(prev => {
+      const newStats = { ...prev };
+      delete newStats[date];
+      return newStats;
+    });
+  }, []);
+
   const showNotification = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 3000);
@@ -94,9 +103,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const contextValue = useMemo(() => ({
     data, setData,
     history, addHistory, deleteHistory, clearHistory,
-    stats, updateStats,
+    stats, updateStats, clearStatsForDate,
     notification, showNotification, hideNotification
-  }), [data, history, stats, notification, addHistory, deleteHistory, clearHistory, updateStats, showNotification, hideNotification]);
+  }), [data, history, stats, notification, addHistory, deleteHistory, clearHistory, updateStats, clearStatsForDate, showNotification, hideNotification]);
 
   return (
     <AppContext.Provider value={contextValue}>
@@ -194,7 +203,7 @@ const NotificationToast = () => {
 
 // 1. Home View (Stats)
 const HomeView = () => {
-  const { stats, updateStats, data, showNotification } = useAppContext();
+  const { stats, updateStats, clearStatsForDate, data, showNotification } = useAppContext();
   
   // Helper to get local date string YYYY-MM-DD
   const getTodayStr = () => {
@@ -228,6 +237,14 @@ const HomeView = () => {
        return false;
     }
     return true;
+  };
+
+  const handleClearStats = () => {
+    if (!checkEditable()) return;
+    if (window.confirm('确定要清空该日期的所有统计数据吗？此操作不可恢复。')) {
+      clearStatsForDate(selectedDate);
+      showNotification('数据已清空');
+    }
   };
 
   const handleIncrement = (issueId: string) => {
@@ -270,8 +287,20 @@ const HomeView = () => {
           </div>
         </header>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 h-64">
-          <h2 className="text-xs font-semibold text-slate-400 mb-4">每日车型异常统计</h2>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 h-64 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xs font-semibold text-slate-400">每日车型异常统计</h2>
+            {chartData.length > 0 && (
+              <button 
+                onClick={handleClearStats}
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                title="清空今日统计"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
+          <div className="flex-1 w-full min-h-0">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
@@ -289,6 +318,7 @@ const HomeView = () => {
           ) : (
             <div className="h-full flex items-center justify-center text-slate-400 text-sm">该日期无数据</div>
           )}
+          </div>
         </div>
 
         {/* Car Model Selector */}
