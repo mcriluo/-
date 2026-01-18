@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, createContext, useContext } from 'react';
+import React, { useState, useEffect, useMemo, createContext, useContext, useCallback } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
   Home, 
@@ -14,8 +14,7 @@ import {
   FileSpreadsheet, 
   Calendar as CalendarIcon, 
   Search, 
-  X, 
-  CarFront 
+  X
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
@@ -57,18 +56,18 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => storage.set(STORAGE_KEYS.HISTORY, history), [history]);
   useEffect(() => storage.set(STORAGE_KEYS.STATS, stats), [stats]);
 
-  const addHistory = (record: Omit<HistoryRecord, 'id'>) => {
+  const addHistory = useCallback((record: Omit<HistoryRecord, 'id'>) => {
     const newRecord = { ...record, id: Date.now() };
     setHistory(prev => [newRecord, ...prev]);
-  };
+  }, []);
 
-  const deleteHistory = (id: number) => {
+  const deleteHistory = useCallback((id: number) => {
     setHistory(prev => prev.filter(r => r.id !== id));
-  };
+  }, []);
 
-  const clearHistory = () => setHistory([]);
+  const clearHistory = useCallback(() => setHistory([]), []);
 
-  const updateStats = (date: string, carModelId: string, issueId: string, delta: number) => {
+  const updateStats = useCallback((date: string, carModelId: string, issueId: string, delta: number) => {
     setStats(prev => {
       const newStats = { ...prev };
       if (!newStats[date]) newStats[date] = {};
@@ -78,27 +77,28 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       const next = Math.max(0, current + delta);
       
       newStats[date][carModelId][issueId] = next;
-      // Cleanup empty entries if needed, but keeping 0 is fine for now
       return newStats;
     });
-  };
+  }, []);
 
-  const showNotification = (msg: string, type: 'success' | 'error' = 'success') => {
+  const showNotification = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 3000);
-  };
+  }, []);
 
-  const hideNotification = () => {
+  const hideNotification = useCallback(() => {
     setNotification(null);
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    data, setData,
+    history, addHistory, deleteHistory, clearHistory,
+    stats, updateStats,
+    notification, showNotification, hideNotification
+  }), [data, history, stats, notification, addHistory, deleteHistory, clearHistory, updateStats, showNotification, hideNotification]);
 
   return (
-    <AppContext.Provider value={{ 
-      data, setData, 
-      history, addHistory, deleteHistory, clearHistory,
-      stats, updateStats,
-      notification, showNotification, hideNotification
-    }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );
@@ -174,7 +174,7 @@ const NotificationToast = () => {
   const { notification, hideNotification } = useAppContext();
   if (!notification) return null;
   return (
-    <div className={`fixed top-4 left-4 right-4 z-[100] p-4 rounded-lg shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 fade-in duration-300 ${notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+    <div className={`fixed top-4 mt-safe left-4 right-4 z-[100] p-4 rounded-lg shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 fade-in duration-300 ${notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
       <div className="flex items-center gap-3">
         {notification.type === 'success' ? <Check size={20} /> : <X size={20} />}
         <span className="font-medium text-sm">{notification.msg}</span>
@@ -265,10 +265,10 @@ const HomeView = () => {
           <h2 className="text-xs font-semibold text-slate-400 mb-4">每日车型异常统计</h2>
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} allowDecimals={false} />
+                <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
                 <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                 <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]}>
                   {chartData.map((entry, index) => (
@@ -282,8 +282,7 @@ const HomeView = () => {
           )}
         </div>
 
-        {/* Car Model Selector with Enhanced Horizontal Scrolling */}
-        {/* Removed no-scrollbar to ensure users on desktop can scroll. Added snap-x for better touch feel. */}
+        {/* Car Model Selector */}
         <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 select-none snap-x">
           {data.carModels.map(model => {
             const total = getModelTotal(model.id);
@@ -293,7 +292,7 @@ const HomeView = () => {
                 key={model.id}
                 onClick={() => setActiveCarModel(model.id)}
                 className={`
-                  relative flex-shrink-0 w-24 h-24 rounded-2xl flex flex-col items-center justify-center gap-2 transition-all snap-start
+                  relative flex-shrink-0 w-24 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all snap-start
                   ${isActive ? 'bg-indigo-50 border-2 border-indigo-500 shadow-sm' : 'bg-white border border-slate-200'}
                 `}
               >
@@ -302,10 +301,7 @@ const HomeView = () => {
                     {total}
                   </span>
                 )}
-                <div className={`p-2 rounded-full ${isActive ? 'bg-indigo-200 text-indigo-700' : 'bg-slate-100 text-slate-400'}`}>
-                   <CarFront size={24} />
-                </div>
-                <span className={`text-xs font-medium text-center px-1 truncate w-full ${isActive ? 'text-indigo-900' : 'text-slate-600'}`}>
+                <span className={`text-sm font-medium text-center px-1 truncate w-full ${isActive ? 'text-indigo-900' : 'text-slate-600'}`}>
                   {model.name}
                 </span>
               </button>
@@ -361,7 +357,6 @@ const HomeView = () => {
   );
 };
 
-// ... (Rest of App.tsx remains same)
 const FeedbackView = () => {
   const { data, addHistory, showNotification } = useAppContext();
   const [form, setForm] = useState<FeedbackForm>(DEFAULT_FORM);
@@ -574,7 +569,7 @@ ${findCode(form.productCodeId)}
 
 // 3. History View
 const HistoryView = () => {
-  const { history, deleteHistory, data } = useAppContext();
+  const { history, deleteHistory, data, showNotification } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
 
   const filtered = history.filter(h => 
@@ -582,13 +577,53 @@ const HistoryView = () => {
     h.dateStr.includes(searchTerm)
   );
 
+  const handleExport = async (fileName: string, blob: Blob) => {
+    // 1. Try Web Share API first (Mobile friendly)
+    try {
+      const file = new File([blob], fileName, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: '导出数据',
+          text: `导出文件: ${fileName}`
+        });
+        return;
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.warn('Share failed, fallback to download', err);
+      } else {
+        return; // User cancelled share
+      }
+    }
+
+    // 2. Fallback to anchor download (PC / unsupported mobile)
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      showNotification("文件下载已触发");
+    } catch (e) {
+      console.error("Download failed", e);
+      showNotification("导出失败，请重试或截图保存", "error");
+    }
+  };
+
   const exportJSON = () => {
-    const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `history-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
+    const jsonStr = JSON.stringify(history, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    handleExport(`history-${new Date().toISOString().split('T')[0]}.json`, blob);
   };
 
   const exportExcel = () => {
@@ -620,7 +655,12 @@ const HistoryView = () => {
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "质量反馈记录");
-    XLSX.writeFile(workbook, `质量反馈记录-${new Date().toISOString().split('T')[0]}.xlsx`);
+    
+    // Create binary string for blob
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    
+    handleExport(`质量反馈记录-${new Date().toISOString().split('T')[0]}.xlsx`, blob);
   };
 
   return (
@@ -681,132 +721,162 @@ const HistoryView = () => {
   );
 };
 
-// 4. Management View
-const ManagementScreen = () => {
-  const { data, setData, showNotification } = useAppContext();
-  const [currentView, setCurrentView] = useState<ManagementViewType>('menu');
+// 4. Management View with Extracted Editor Component to Prevent Re-mounts
+const Editor = <T extends BaseEntity>({ 
+  title, 
+  items, 
+  onAdd, 
+  onDelete, 
+  onBack,
+  parentIdKey, 
+  parentList, 
+  secondaryParentIdKey, 
+  secondaryParentList 
+}: { 
+  title: string; 
+  items: T[]; 
+  onAdd: (name: string, parentId?: string, secondaryParentId?: string) => void; 
+  onDelete: (id: string) => void;
+  onBack: () => void;
+  parentIdKey?: keyof T;
+  parentList?: BaseEntity[];
+  secondaryParentIdKey?: string;
+  secondaryParentList?: BaseEntity[];
+}) => {
+  const { showNotification } = useAppContext();
+  const [newName, setNewName] = useState('');
+  const [selectedParent, setSelectedParent] = useState('');
+  const [filterParent, setFilterParent] = useState('');
 
-  const Editor = <T extends BaseEntity>({ 
-    title, 
-    items, 
-    onAdd, 
-    onDelete, 
-    parentIdKey, 
-    parentList, 
-    secondaryParentIdKey, 
-    secondaryParentList 
-  }: { 
-    title: string; 
-    items: T[]; 
-    onAdd: (name: string, parentId?: string, secondaryParentId?: string) => void; 
-    onDelete: (id: string) => void;
-    parentIdKey?: keyof T;
-    parentList?: BaseEntity[];
-    secondaryParentIdKey?: string;
-    secondaryParentList?: BaseEntity[];
-  }) => {
-    const [newName, setNewName] = useState('');
-    const [selectedParent, setSelectedParent] = useState('');
-    const [filterParent, setFilterParent] = useState(secondaryParentList?.[0]?.id || '');
-
-    useEffect(() => {
-        if (!parentList) return;
-        let filtered = parentList;
-        if (secondaryParentIdKey && filterParent) {
-            filtered = parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
-        }
-        if (filtered.length > 0) {
-            setSelectedParent(filtered[0].id);
+  // Handle Secondary Parent (Filter) Selection Logic
+  useEffect(() => {
+    if (!secondaryParentList) return;
+    
+    // Check if current filter selection is valid in the new list
+    const isValid = filterParent && secondaryParentList.some(p => p.id === filterParent);
+    
+    if (!isValid) {
+        // If invalid or empty, default to first item
+        if (secondaryParentList.length > 0) {
+            setFilterParent(secondaryParentList[0].id);
         } else {
-            setSelectedParent('');
+            setFilterParent('');
         }
-    }, [parentList, filterParent, secondaryParentIdKey]);
+    }
+  }, [secondaryParentList, filterParent]);
 
-    const effectiveParentList = useMemo(() => {
-      if (secondaryParentIdKey && parentList) {
-         return parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
+  // Handle Parent Selection Logic
+  useEffect(() => {
+      if (!parentList) return;
+      
+      let filtered = parentList;
+      // Apply filter if applicable
+      if (secondaryParentIdKey && filterParent) {
+          filtered = parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
       }
-      return parentList;
-    }, [parentList, filterParent, secondaryParentIdKey]);
-
-    const handleAdd = () => {
-      if (!newName.trim()) return;
-      if (parentIdKey && !selectedParent) {
-         showNotification("请选择上级分类", "error");
-         return;
+      
+      // Check if current parent selection is valid in the filtered list
+      const isValid = selectedParent && filtered.some(p => p.id === selectedParent);
+      
+      if (!isValid) {
+          // If invalid or empty, default to first item
+          if (filtered.length > 0) {
+              setSelectedParent(filtered[0].id);
+          } else {
+              setSelectedParent('');
+          }
       }
-      onAdd(newName, selectedParent);
-      setNewName('');
-      showNotification("添加成功");
-    };
+  }, [parentList, filterParent, secondaryParentIdKey, selectedParent]);
 
-    const handleCopy = async (text: string) => {
-      try {
-        await navigator.clipboard.writeText(text);
-        showNotification(`已复制: ${text}`);
-      } catch (err) {
-        showNotification("复制失败", "error");
-      }
-    };
+  const effectiveParentList = useMemo(() => {
+    if (secondaryParentIdKey && parentList) {
+       return parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
+    }
+    return parentList;
+  }, [parentList, filterParent, secondaryParentIdKey]);
 
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 mb-6">
-          <button onClick={() => setCurrentView('menu')} className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full">
-            <ChevronLeft size={24} />
-          </button>
-          <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-        </div>
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    if (parentIdKey && !selectedParent) {
+       showNotification("请选择上级分类", "error");
+       return;
+    }
+    onAdd(newName, selectedParent);
+    setNewName('');
+    showNotification("添加成功");
+  };
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 space-y-3">
-          {secondaryParentList && (
-             <Select label="筛选: 所属车型" value={filterParent} onChange={e => setFilterParent(e.target.value)}>
-                {secondaryParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-             </Select>
-          )}
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotification(`已复制: ${text}`);
+    } catch (err) {
+      showNotification("复制失败", "error");
+    }
+  };
 
-          {parentList && (
-             <Select label="上级分类" value={selectedParent} onChange={e => setSelectedParent(e.target.value)}>
-                {effectiveParentList && effectiveParentList.length > 0 ? (
-                    effectiveParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-                ) : (
-                    <option value="" disabled>暂无选项 (请先添加上级数据)</option>
-                )}
-             </Select>
-          )}
-          
-          <div className="flex gap-2">
-            <input 
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm outline-none focus:border-indigo-500"
-              placeholder={'请输入名称/代码...'}
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-            />
-            <Button onClick={handleAdd} className="w-12 h-10 p-0"><Plus size={20} /></Button>
-          </div>
-        </div>
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 mb-6">
+        <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+      </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-          {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).map(item => (
-            <div key={item.id} className="bg-white p-3 rounded-lg border border-slate-100 flex justify-between items-center group">
-              <span 
-                className="font-medium text-slate-700 flex-1 cursor-pointer active:text-indigo-600 transition-colors"
-                onClick={() => handleCopy(item.name || (item as any).code)}
-              >
-                {item.name || (item as any).code}
-              </span>
-              <button onClick={() => onDelete(item.id)} className="text-slate-300 hover:text-red-500 p-2">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-          {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).length === 0 && (
-            <div className="text-center text-slate-400 text-sm mt-8">暂无数据</div>
-          )}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 space-y-3">
+        {secondaryParentList && (
+           <Select label="筛选: 所属车型" value={filterParent} onChange={e => setFilterParent(e.target.value)}>
+              {secondaryParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+           </Select>
+        )}
+
+        {parentList && (
+           <Select label="上级分类" value={selectedParent} onChange={e => setSelectedParent(e.target.value)}>
+              {effectiveParentList && effectiveParentList.length > 0 ? (
+                  effectiveParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+              ) : (
+                  <option value="" disabled>暂无选项 (请先添加上级数据)</option>
+              )}
+           </Select>
+        )}
+        
+        <div className="flex gap-2">
+          <input 
+            className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm outline-none focus:border-indigo-500"
+            placeholder={'请输入名称/代码...'}
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+          />
+          <Button onClick={handleAdd} className="w-12 h-10 p-0"><Plus size={20} /></Button>
         </div>
       </div>
-    );
-  };
+
+      <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+        {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).map(item => (
+          <div key={item.id} className="bg-white p-3 rounded-lg border border-slate-100 flex justify-between items-center group">
+            <span 
+              className="font-medium text-slate-700 flex-1 cursor-pointer active:text-indigo-600 transition-colors"
+              onClick={() => handleCopy(item.name || (item as any).code)}
+            >
+              {item.name || (item as any).code}
+            </span>
+            <button onClick={() => onDelete(item.id)} className="text-slate-300 hover:text-red-500 p-2">
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).length === 0 && (
+          <div className="text-center text-slate-400 text-sm mt-8">暂无数据</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ManagementScreen = () => {
+  const { data, setData } = useAppContext();
+  const [currentView, setCurrentView] = useState<ManagementViewType>('menu');
 
   const genId = () => Math.random().toString(36).substr(2, 9);
   
@@ -843,6 +913,8 @@ const ManagementScreen = () => {
       
       case 'departments':
         return <Editor 
+          key="departments"
+          onBack={() => setCurrentView('menu')}
           title="部门管理" items={data.departments} 
           onAdd={(name) => setData(d => ({ ...d, departments: [...d.departments, { id: genId(), name }] }))}
           onDelete={(id) => setData(d => {
@@ -862,6 +934,8 @@ const ManagementScreen = () => {
       
       case 'processes':
         return <Editor 
+          key="processes"
+          onBack={() => setCurrentView('menu')}
           title="工序管理" items={data.processes} parentIdKey="departmentId" parentList={data.departments}
           onAdd={(name, pid) => setData(d => ({ ...d, processes: [...d.processes, { id: genId(), name, departmentId: pid! }] }))}
           onDelete={(id) => setData(d => {
@@ -883,6 +957,8 @@ const ManagementScreen = () => {
              return { ...p, name: dept ? `${dept.name} → ${p.name}` : p.name };
         });
         return <Editor 
+          key="products"
+          onBack={() => setCurrentView('menu')}
           title="产品名称管理" items={data.productNames} parentIdKey="processId" parentList={processesWithFullPath}
           onAdd={(name, pid) => setData(d => ({ ...d, productNames: [...d.productNames, { id: genId(), name, processId: pid! }] }))}
           onDelete={(id) => setData(d => {
@@ -904,6 +980,8 @@ const ManagementScreen = () => {
              return { ...pn, name: fullPath ? `${fullPath} → \n${pn.name}` : pn.name };
         });
         return <Editor 
+          key="models"
+          onBack={() => setCurrentView('menu')}
           title="车型管理" items={data.carModels} parentIdKey="productNameId" parentList={productsWithFullPath}
           onAdd={(name, pid) => setData(d => ({ ...d, carModels: [...d.carModels, { id: genId(), name, productNameId: pid! }] }))}
           onDelete={(id) => setData(d => ({ ...d, carModels: d.carModels.filter(x => x.id !== id), productCodes: d.productCodes.filter(c => c.carModelId !== id) }))}
@@ -918,14 +996,16 @@ const ManagementScreen = () => {
             return { ...m, name: fullPath ? `${fullPath} → \n${m.name}` : m.name };
          });
          return <Editor 
+          key="codes"
+          onBack={() => setCurrentView('menu')}
           title="产品编码管理" items={data.productCodes.map(c => ({...c, name: c.code}))} parentIdKey="carModelId" parentList={modelsWithFullPath}
           onAdd={(code, pid) => setData(d => ({ ...d, productCodes: [...d.productCodes, { id: genId(), code, carModelId: pid! }] }))}
           onDelete={(id) => setData(d => ({ ...d, productCodes: d.productCodes.filter(x => x.id !== id) }))}
         />;
 
-      case 'issues': return <Editor title="失效模式管理" items={data.issues} onAdd={(name) => setData(d => ({ ...d, issues: [...d.issues, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, issues: d.issues.filter(x => x.id !== id) }))} />;
-      case 'reporters': return <Editor title="反馈人管理" items={data.reporters} onAdd={(name) => setData(d => ({...d, reporters: [...d.reporters, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, reporters: d.reporters.filter(x => x.id !== id)}))} />;
-      case 'measures': return <Editor title="处置措施管理" items={data.measures} onAdd={(name) => setData(d => ({...d, measures: [...d.measures, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, measures: d.measures.filter(x => x.id !== id)}))} />;
+      case 'issues': return <Editor key="issues" onBack={() => setCurrentView('menu')} title="失效模式管理" items={data.issues} onAdd={(name) => setData(d => ({ ...d, issues: [...d.issues, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, issues: d.issues.filter(x => x.id !== id) }))} />;
+      case 'reporters': return <Editor key="reporters" onBack={() => setCurrentView('menu')} title="反馈人管理" items={data.reporters} onAdd={(name) => setData(d => ({...d, reporters: [...d.reporters, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, reporters: d.reporters.filter(x => x.id !== id)}))} />;
+      case 'measures': return <Editor key="measures" onBack={() => setCurrentView('menu')} title="处置措施管理" items={data.measures} onAdd={(name) => setData(d => ({...d, measures: [...d.measures, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, measures: d.measures.filter(x => x.id !== id)}))} />;
 
       default: return null;
     }
