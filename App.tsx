@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, createContext, useContext, useCallback } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -15,7 +16,10 @@ import {
   Calendar as CalendarIcon, 
   Search, 
   X,
-  Minus
+  Minus,
+  Share2,
+  ExternalLink,
+  Download
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
@@ -124,7 +128,7 @@ const useAppContext = () => {
 
 const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }> = ({ className = '', variant = 'primary', ...props }) => {
   const variants = {
-    primary: 'bg-indigo-600 text-white active:bg-indigo-700',
+    primary: 'bg-indigo-600 text-white active:bg-indigo-700 disabled:bg-slate-300',
     secondary: 'bg-white text-slate-700 border border-slate-300 active:bg-slate-50',
     danger: 'bg-red-50 text-red-600 border border-red-200 active:bg-red-100',
     ghost: 'bg-transparent text-slate-600 active:bg-slate-100'
@@ -199,13 +203,32 @@ const NotificationToast = () => {
   );
 };
 
+// --- Modal Component ---
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+        <div className="flex justify-between items-center p-5 border-b border-slate-100">
+          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Views ---
 
 // 1. Home View (Stats)
 const HomeView = () => {
   const { stats, updateStats, clearStatsForDate, data, showNotification } = useAppContext();
   
-  // Helper to get local date string YYYY-MM-DD
   const getTodayStr = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -221,7 +244,7 @@ const HomeView = () => {
     const dailyData = stats[selectedDate] || {};
     return data.carModels.map(model => {
       const modelStats = dailyData[model.id] || {};
-      const totalIssues = Object.values(modelStats).reduce((a, b) => a + b, 0);
+      const totalIssues = (Object.values(modelStats) as number[]).reduce((a, b) => a + b, 0);
       return {
         name: model.name,
         count: totalIssues,
@@ -265,7 +288,7 @@ const HomeView = () => {
 
   const getModelTotal = (modelId: string) => {
     const modelStats = stats[selectedDate]?.[modelId] || {};
-    return Object.values(modelStats).reduce((a, b) => a + b, 0);
+    return (Object.values(modelStats) as number[]).reduce((a, b) => a + b, 0);
   };
 
   const activeIssues = data.issues
@@ -321,7 +344,6 @@ const HomeView = () => {
           </div>
         </div>
 
-        {/* Car Model Selector */}
         <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 select-none snap-x">
           {data.carModels.map(model => {
             const total = getModelTotal(model.id);
@@ -614,100 +636,110 @@ ${findCode(form.productCodeId)}
 const HistoryView = () => {
   const { history, deleteHistory, data, showNotification } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
+  const [isExportModalOpen, setExportModalOpen] = useState(false);
+  const [exportType, setExportType] = useState<'excel' | 'json' | null>(null);
 
   const filtered = history.filter(h => 
     h.content.toLowerCase().includes(searchTerm.toLowerCase()) || 
     h.dateStr.includes(searchTerm)
   );
 
-  const handleExport = async (fileName: string, blob: Blob) => {
-    // 1. Try Web Share API first (Mobile friendly)
-    try {
-      const file = new File([blob], fileName, { type: blob.type });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: '导出数据',
-          text: `导出文件: ${fileName}`
-        });
-        return;
+  const getExportData = (type: 'excel' | 'json') => {
+    if (type === 'json') {
+      const jsonStr = JSON.stringify(history, null, 2);
+      return { blob: new Blob([jsonStr], { type: 'application/json' }), ext: 'json', mime: 'application/json' };
+    } else {
+      const findName = (list: BaseEntity[], id: string) => list.find(x => x.id === id)?.name || '未知';
+      const findCode = (id: string) => data.productCodes.find(x => x.id === id)?.code || '未知';
+      
+      const rows = history.map(h => {
+         const f = h.formData;
+         const measures = f.measureIds.map(mid => findName(data.measures, mid)).join(', ');
+         const qtyText = QUANTITY_PRESETS.find(q => q.value === f.quantityPreset)?.text || `${f.quantity}`;
+
+         return {
+           "记录ID": h.id, "发现日期": h.dateStr, "发现时间": h.timeStr,
+           "工序": findName(data.processes, f.processId), "责任部门": findName(data.departments, f.departmentId),
+           "车型": findName(data.carModels, f.carModelId), "产品名称": findName(data.productNames, f.productNameId),
+           "产品编码": findCode(f.productCodeId), "失效问题": findName(data.issues, f.issueId),
+           "处置措施": measures, "发现数量": qtyText, "问题等级": f.grade, "反馈人": findName(data.reporters, f.reporterId)
+         };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "质量反馈记录");
+      const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      return { 
+        blob: new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 
+        ext: 'xlsx', 
+        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      };
+    }
+  };
+
+  const handleShare = async () => {
+    if (!exportType) return;
+    const { blob, ext } = getExportData(exportType);
+    const fileName = `quality_report_${new Date().getTime()}.${ext}`;
+    
+    if (navigator.share) {
+      try {
+        const file = new File([blob], fileName, { type: blob.type });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: '质量反馈报告' });
+          showNotification("已呼出分享面板");
+          setExportModalOpen(false);
+          return;
+        }
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') showNotification("分享失败，请尝试其他方式", "error");
       }
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        console.warn('Share failed, fallback to download', err);
+    }
+    showNotification("当前环境不支持分享文件", "error");
+  };
+
+  const handleOpenLink = () => {
+    if (!exportType) return;
+    const { blob, mime } = getExportData(exportType);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      const newWin = window.open();
+      if (newWin) {
+        newWin.document.write(`<iframe src="${base64}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+        showNotification("已尝试在新窗口打开，请保存");
       } else {
-        return; // User cancelled share
+        showNotification("新窗口被拦截，请手动允许浏览器弹窗", "error");
       }
-    }
-
-    // 2. Fallback to anchor download (PC / unsupported mobile)
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Cleanup
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-      
-      showNotification("文件下载已触发");
-    } catch (e) {
-      console.error("Download failed", e);
-      showNotification("导出失败，请重试或截图保存", "error");
-    }
+    };
+    reader.readAsDataURL(blob);
+    setExportModalOpen(false);
   };
 
-  const exportJSON = () => {
-    const jsonStr = JSON.stringify(history, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    handleExport(`history-${dateStr}.json`, blob);
+  const handleDirectDownload = () => {
+    if (!exportType) return;
+    const { blob, ext } = getExportData(exportType);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `quality_report_${new Date().getTime()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+    showNotification("下载已尝试启动");
+    setExportModalOpen(false);
   };
 
-  const exportExcel = () => {
-    const findName = (list: BaseEntity[], id: string) => list.find(x => x.id === id)?.name || '未知';
-    const findCode = (id: string) => data.productCodes.find(x => x.id === id)?.code || '未知';
-    
-    const rows = history.map(h => {
-       const f = h.formData;
-       const measures = f.measureIds.map(mid => findName(data.measures, mid)).join(', ');
-       const qtyText = QUANTITY_PRESETS.find(q => q.value === f.quantityPreset)?.text || `${f.quantity}`;
-
-       return {
-         "记录ID": h.id,
-         "发现日期": h.dateStr,
-         "发现时间": h.timeStr,
-         "工序": findName(data.processes, f.processId),
-         "责任部门": findName(data.departments, f.departmentId),
-         "车型": findName(data.carModels, f.carModelId),
-         "产品名称": findName(data.productNames, f.productNameId),
-         "产品编码": findCode(f.productCodeId),
-         "失效问题": findName(data.issues, f.issueId),
-         "处置措施": measures,
-         "发现数量": qtyText,
-         "问题等级": f.grade,
-         "反馈人": findName(data.reporters, f.reporterId)
-       };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "质量反馈记录");
-    
-    // Create binary string for blob
-    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    handleExport(`质量反馈记录-${dateStr}.xlsx`, blob);
+  const handleCopyText = () => {
+    if (!exportType) return;
+    const content = exportType === 'json' ? JSON.stringify(history) : history.map(h => h.content).join('\n---\n');
+    navigator.clipboard.writeText(content);
+    showNotification("原始数据已复制到剪贴板");
+    setExportModalOpen(false);
   };
 
   return (
@@ -715,10 +747,10 @@ const HistoryView = () => {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-bold text-slate-900">历史记录</h1>
         <div className="flex gap-2">
-            <Button variant="ghost" onClick={exportJSON} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
+            <Button variant="ghost" onClick={() => { setExportType('json'); setExportModalOpen(true); }} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
               <FileJson size={20} className="text-orange-500" />
             </Button>
-            <Button variant="ghost" onClick={exportExcel} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
+            <Button variant="ghost" onClick={() => { setExportType('excel'); setExportModalOpen(true); }} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
               <FileSpreadsheet size={20} className="text-emerald-600" />
             </Button>
         </div>
@@ -764,113 +796,122 @@ const HistoryView = () => {
           </div>
         ))}
       </div>
+
+      <Modal 
+        isOpen={isExportModalOpen} 
+        onClose={() => setExportModalOpen(false)} 
+        title={`导出 ${exportType === 'excel' ? 'Excel 表格' : 'JSON 数据'}`}
+      >
+        <div className="grid grid-cols-1 gap-4">
+          <button 
+            onClick={handleShare}
+            className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-all text-left"
+          >
+            <div className="p-3 bg-indigo-500 text-white rounded-xl"><Share2 size={24} /></div>
+            <div>
+              <div className="font-bold text-slate-800">发送到好友/微信</div>
+              <div className="text-xs text-slate-500">通过系统分享面板发送文件</div>
+            </div>
+          </button>
+
+          <button 
+            onClick={handleOpenLink}
+            className="flex items-center gap-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-all text-left"
+          >
+            <div className="p-3 bg-emerald-500 text-white rounded-xl"><ExternalLink size={24} /></div>
+            <div>
+              <div className="font-bold text-slate-800">浏览器新窗口打开</div>
+              <div className="text-xs text-slate-500">尝试在独立窗口中预览并保存文件</div>
+            </div>
+          </button>
+
+          <button 
+            onClick={handleDirectDownload}
+            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all text-left"
+          >
+            <div className="p-3 bg-slate-600 text-white rounded-xl"><Download size={24} /></div>
+            <div>
+              <div className="font-bold text-slate-800">直接下载到设备</div>
+              <div className="text-xs text-slate-500">传统的网页下载方式 (部分内置浏览器可能失效)</div>
+            </div>
+          </button>
+
+          <button 
+            onClick={handleCopyText}
+            className="flex items-center gap-4 p-4 rounded-2xl bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-all text-left"
+          >
+            <div className="p-3 bg-orange-500 text-white rounded-xl"><Copy size={24} /></div>
+            <div>
+              <div className="font-bold text-slate-800">拷贝原始数据</div>
+              <div className="text-xs text-slate-500">将纯文本数据复制到剪贴板</div>
+            </div>
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 };
 
 // 4. Management View with Extracted Editor Component to Prevent Re-mounts
-const Editor = <T extends BaseEntity>({ 
-  title, 
-  items, 
-  onAdd, 
-  onDelete, 
-  onBack,
-  parentIdKey, 
-  parentList, 
-  secondaryParentIdKey, 
-  secondaryParentList 
-}: { 
-  title: string; 
-  items: T[]; 
-  onAdd: (name: string, parentId?: string, secondaryParentId?: string) => void; 
+interface EditorProps<T extends BaseEntity> {
+  title: string;
+  items: T[];
+  onAdd: (name: string, parentId?: string, secondaryParentId?: string) => void;
   onDelete: (id: string) => void;
   onBack: () => void;
-  parentIdKey?: keyof T;
+  parentIdKey?: string;
   parentList?: BaseEntity[];
   secondaryParentIdKey?: string;
   secondaryParentList?: BaseEntity[];
-}) => {
+}
+
+function Editor<T extends BaseEntity>({ 
+  title, items, onAdd, onDelete, onBack, parentIdKey, parentList, secondaryParentIdKey, secondaryParentList 
+}: EditorProps<T>) {
   const { showNotification } = useAppContext();
   const [newName, setNewName] = useState('');
   const [selectedParent, setSelectedParent] = useState('');
   const [filterParent, setFilterParent] = useState('');
 
-  // Handle Secondary Parent (Filter) Selection Logic
   useEffect(() => {
     if (!secondaryParentList) return;
-    
-    // Check if current filter selection is valid in the new list
     const isValid = filterParent && secondaryParentList.some(p => p.id === filterParent);
-    
     if (!isValid) {
-        // If invalid or empty, default to first item
-        if (secondaryParentList.length > 0) {
-            setFilterParent(secondaryParentList[0].id);
-        } else {
-            setFilterParent('');
-        }
+      if (secondaryParentList.length > 0) setFilterParent(secondaryParentList[0].id);
+      else setFilterParent('');
     }
   }, [secondaryParentList, filterParent]);
 
-  // Handle Parent Selection Logic
   useEffect(() => {
       if (!parentList) return;
-      
       let filtered = parentList;
-      // Apply filter if applicable
-      if (secondaryParentIdKey && filterParent) {
-          filtered = parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
-      }
-      
-      // Check if current parent selection is valid in the filtered list
+      if (secondaryParentIdKey && filterParent) filtered = parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
       const isValid = selectedParent && filtered.some(p => p.id === selectedParent);
-      
       if (!isValid) {
-          // If invalid or empty, default to first item
-          if (filtered.length > 0) {
-              setSelectedParent(filtered[0].id);
-          } else {
-              setSelectedParent('');
-          }
+          if (filtered.length > 0) setSelectedParent(filtered[0].id);
+          else setSelectedParent('');
       }
   }, [parentList, filterParent, secondaryParentIdKey, selectedParent]);
 
   const effectiveParentList = useMemo(() => {
-    if (secondaryParentIdKey && parentList) {
-       return parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
-    }
+    if (secondaryParentIdKey && parentList) return parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
     return parentList;
   }, [parentList, filterParent, secondaryParentIdKey]);
 
   const handleAdd = () => {
     if (!newName.trim()) return;
-    
-    // Check duplicates in the current scope
     const trimmedName = newName.trim();
-    const siblings = items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent);
+    const siblings = items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent);
     const isDuplicate = siblings.some(i => (i.name || (i as any).code) === trimmedName);
-
-    if (isDuplicate) {
-        showNotification("该名称已存在，请勿重复添加", "error");
-        return;
-    }
-
-    if (parentIdKey && !selectedParent) {
-       showNotification("请选择上级分类", "error");
-       return;
-    }
+    if (isDuplicate) { showNotification("该名称已存在，请勿重复添加", "error"); return; }
+    if (parentIdKey && !selectedParent) { showNotification("请选择上级分类", "error"); return; }
     onAdd(trimmedName, selectedParent);
     setNewName('');
     showNotification("添加成功");
   };
 
   const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showNotification(`已复制: ${text}`);
-    } catch (err) {
-      showNotification("复制失败", "error");
-    }
+    try { await navigator.clipboard.writeText(text); showNotification(`已复制: ${text}`); } catch (err) { showNotification("复制失败", "error"); }
   };
 
   return (
@@ -911,7 +952,7 @@ const Editor = <T extends BaseEntity>({
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-        {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).map(item => (
+        {items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent).map(item => (
           <div key={item.id} className="bg-white p-3 rounded-lg border border-slate-100 flex justify-between items-center group">
             <span 
               className="font-medium text-slate-700 flex-1 cursor-pointer active:text-indigo-600 transition-colors"
@@ -924,18 +965,17 @@ const Editor = <T extends BaseEntity>({
             </button>
           </div>
         ))}
-        {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === selectedParent).length === 0 && (
+        {items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent).length === 0 && (
           <div className="text-center text-slate-400 text-sm mt-8">暂无数据</div>
         )}
       </div>
     </div>
   );
-};
+}
 
 const ManagementScreen = () => {
   const { data, setData } = useAppContext();
   const [currentView, setCurrentView] = useState<ManagementViewType>('menu');
-
   const genId = () => Math.random().toString(36).substr(2, 9);
   
   const renderContent = () => {
@@ -969,102 +1009,14 @@ const ManagementScreen = () => {
           </div>
         );
       
-      case 'departments':
-        return <Editor 
-          key="departments"
-          onBack={() => setCurrentView('menu')}
-          title="部门管理" items={data.departments} 
-          onAdd={(name) => setData(d => ({ ...d, departments: [...d.departments, { id: genId(), name }] }))}
-          onDelete={(id) => setData(d => {
-            const procIds = d.processes.filter(p => p.departmentId === id).map(p => p.id);
-            const prodIds = d.productNames.filter(p => procIds.includes(p.processId)).map(p => p.id);
-            const modelIds = d.carModels.filter(m => prodIds.includes(m.productNameId)).map(m => m.id);
-            return {
-              ...d,
-              departments: d.departments.filter(x => x.id !== id),
-              processes: d.processes.filter(p => !procIds.includes(p.id)),
-              productNames: d.productNames.filter(p => !prodIds.includes(p.id)),
-              carModels: d.carModels.filter(m => !modelIds.includes(m.id)),
-              productCodes: d.productCodes.filter(c => !modelIds.includes(c.carModelId))
-            };
-          })}
-        />;
-      
-      case 'processes':
-        return <Editor 
-          key="processes"
-          onBack={() => setCurrentView('menu')}
-          title="工序管理" items={data.processes} parentIdKey="departmentId" parentList={data.departments}
-          onAdd={(name, pid) => setData(d => ({ ...d, processes: [...d.processes, { id: genId(), name, departmentId: pid! }] }))}
-          onDelete={(id) => setData(d => {
-             const prodIds = d.productNames.filter(p => p.processId === id).map(p => p.id);
-             const modelIds = d.carModels.filter(m => prodIds.includes(m.productNameId)).map(m => m.id);
-             return {
-               ...d,
-               processes: d.processes.filter(x => x.id !== id),
-               productNames: d.productNames.filter(p => !prodIds.includes(p.id)),
-               carModels: d.carModels.filter(m => !modelIds.includes(m.id)),
-               productCodes: d.productCodes.filter(c => !modelIds.includes(c.carModelId))
-             };
-          })}
-        />;
-
-      case 'products':
-        const processesWithFullPath = data.processes.map(p => {
-             const dept = data.departments.find(d => d.id === p.departmentId);
-             return { ...p, name: dept ? `${dept.name} → ${p.name}` : p.name };
-        });
-        return <Editor 
-          key="products"
-          onBack={() => setCurrentView('menu')}
-          title="产品名称管理" items={data.productNames} parentIdKey="processId" parentList={processesWithFullPath}
-          onAdd={(name, pid) => setData(d => ({ ...d, productNames: [...d.productNames, { id: genId(), name, processId: pid! }] }))}
-          onDelete={(id) => setData(d => {
-             const modelIds = d.carModels.filter(m => m.productNameId === id).map(m => m.id);
-             return {
-               ...d,
-               productNames: d.productNames.filter(x => x.id !== id),
-               carModels: d.carModels.filter(m => !modelIds.includes(m.id)),
-               productCodes: d.productCodes.filter(c => !modelIds.includes(c.carModelId))
-             };
-          })}
-        />;
-
-      case 'models':
-        const productsWithFullPath = data.productNames.map(pn => {
-             const process = data.processes.find(p => p.id === pn.processId);
-             const dept = process ? data.departments.find(d => d.id === process.departmentId) : null;
-             const fullPath = [dept?.name, process?.name].filter(Boolean).join(' → ');
-             return { ...pn, name: fullPath ? `${fullPath} → \n${pn.name}` : pn.name };
-        });
-        return <Editor 
-          key="models"
-          onBack={() => setCurrentView('menu')}
-          title="车型管理" items={data.carModels} parentIdKey="productNameId" parentList={productsWithFullPath}
-          onAdd={(name, pid) => setData(d => ({ ...d, carModels: [...d.carModels, { id: genId(), name, productNameId: pid! }] }))}
-          onDelete={(id) => setData(d => ({ ...d, carModels: d.carModels.filter(x => x.id !== id), productCodes: d.productCodes.filter(c => c.carModelId !== id) }))}
-        />;
-
-      case 'codes':
-         const modelsWithFullPath = data.carModels.map(m => {
-            const product = data.productNames.find(p => p.id === m.productNameId);
-            const process = product ? data.processes.find(p => p.id === product.processId) : null;
-            const dept = process ? data.departments.find(d => d.id === process.departmentId) : null;
-            const fullPath = [dept?.name, process?.name, product?.name].filter(Boolean).join(' → ');
-            return { ...m, name: fullPath ? `${fullPath} → \n${m.name}` : m.name };
-         });
-         return <Editor 
-          key="codes"
-          onBack={() => setCurrentView('menu')}
-          title="产品编码管理" items={data.productCodes.map(c => ({...c, name: c.code}))} parentIdKey="carModelId" parentList={modelsWithFullPath}
-          onAdd={(code, pid) => setData(d => ({ ...d, productCodes: [...d.productCodes, { id: genId(), code, carModelId: pid! }] }))}
-          onDelete={(id) => setData(d => ({ ...d, productCodes: d.productCodes.filter(x => x.id !== id) }))}
-        />;
-
+      case 'departments': return <Editor key="departments" onBack={() => setCurrentView('menu')} title="部门管理" items={data.departments} onAdd={(name) => setData(d => ({ ...d, departments: [...d.departments, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, departments: d.departments.filter(x => x.id !== id) }))} />;
+      case 'processes': return <Editor key="processes" onBack={() => setCurrentView('menu')} title="工序管理" items={data.processes} parentIdKey="departmentId" parentList={data.departments} onAdd={(name, pid) => setData(d => ({ ...d, processes: [...d.processes, { id: genId(), name, departmentId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, processes: d.processes.filter(x => x.id !== id) }))} />;
+      case 'products': return <Editor key="products" onBack={() => setCurrentView('menu')} title="产品名称管理" items={data.productNames} parentIdKey="processId" parentList={data.processes} onAdd={(name, pid) => setData(d => ({ ...d, productNames: [...d.productNames, { id: genId(), name, processId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, productNames: d.productNames.filter(x => x.id !== id) }))} />;
+      case 'models': return <Editor key="models" onBack={() => setCurrentView('menu')} title="车型管理" items={data.carModels} parentIdKey="productNameId" parentList={data.productNames} onAdd={(name, pid) => setData(d => ({ ...d, carModels: [...d.carModels, { id: genId(), name, productNameId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, carModels: d.carModels.filter(x => x.id !== id) }))} />;
+      case 'codes': return <Editor key="codes" onBack={() => setCurrentView('menu')} title="产品编码管理" items={data.productCodes.map(c => ({...c, name: c.code}))} parentIdKey="carModelId" parentList={data.carModels} onAdd={(code, pid) => setData(d => ({ ...d, productCodes: [...d.productCodes, { id: genId(), code, carModelId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, productCodes: d.productCodes.filter(x => x.id !== id) }))} />;
       case 'issues': return <Editor key="issues" onBack={() => setCurrentView('menu')} title="失效模式管理" items={data.issues} onAdd={(name) => setData(d => ({ ...d, issues: [...d.issues, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, issues: d.issues.filter(x => x.id !== id) }))} />;
       case 'reporters': return <Editor key="reporters" onBack={() => setCurrentView('menu')} title="反馈人管理" items={data.reporters} onAdd={(name) => setData(d => ({...d, reporters: [...d.reporters, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, reporters: d.reporters.filter(x => x.id !== id)}))} />;
       case 'measures': return <Editor key="measures" onBack={() => setCurrentView('menu')} title="处置措施管理" items={data.measures} onAdd={(name) => setData(d => ({...d, measures: [...d.measures, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, measures: d.measures.filter(x => x.id !== id)}))} />;
-
       default: return null;
     }
   };
@@ -1072,8 +1024,7 @@ const ManagementScreen = () => {
   return <div className="p-4 pb-24 h-full">{renderContent()}</div>;
 };
 
-// --- Main App Component with Routing ---
-
+// --- Main App Component ---
 const AppContent = () => {
   return (
     <>
