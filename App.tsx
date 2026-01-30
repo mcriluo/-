@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, createContext, useContext, useCallback } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -19,7 +18,10 @@ import {
   Minus,
   Share2,
   ExternalLink,
-  Download
+  Download,
+  Info,
+  Smartphone,
+  AlertCircle
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
@@ -45,8 +47,8 @@ interface AppContextType {
   stats: DailyStats;
   updateStats: (date: string, carModelId: string, issueId: string, delta: number) => void;
   clearStatsForDate: (date: string) => void;
-  notification: { msg: string; type: 'success' | 'error' } | null;
-  showNotification: (msg: string, type?: 'success' | 'error') => void;
+  notification: { msg: string; type: 'success' | 'error' | 'info' } | null;
+  showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   hideNotification: () => void;
 }
 
@@ -56,7 +58,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [data, setData] = useState<HierarchyData>(() => storage.get(STORAGE_KEYS.DATA, INITIAL_DATA));
   const [history, setHistory] = useState<HistoryRecord[]>(() => storage.get(STORAGE_KEYS.HISTORY, []));
   const [stats, setStats] = useState<DailyStats>(() => storage.get(STORAGE_KEYS.STATS, {}));
-  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   useEffect(() => storage.set(STORAGE_KEYS.DATA, data), [data]);
   useEffect(() => storage.set(STORAGE_KEYS.HISTORY, history), [history]);
@@ -78,11 +80,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       const newStats = { ...prev };
       if (!newStats[date]) newStats[date] = {};
       if (!newStats[date][carModelId]) newStats[date][carModelId] = {};
-      
       const current = newStats[date][carModelId][issueId] || 0;
-      const next = Math.max(0, current + delta);
-      
-      newStats[date][carModelId][issueId] = next;
+      newStats[date][carModelId][issueId] = Math.max(0, current + delta);
       return newStats;
     });
   }, []);
@@ -95,27 +94,20 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     });
   }, []);
 
-  const showNotification = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+  const showNotification = useCallback((msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 4000);
   }, []);
 
-  const hideNotification = useCallback(() => {
-    setNotification(null);
-  }, []);
+  const hideNotification = useCallback(() => setNotification(null), []);
 
   const contextValue = useMemo(() => ({
-    data, setData,
-    history, addHistory, deleteHistory, clearHistory,
+    data, setData, history, addHistory, deleteHistory, clearHistory,
     stats, updateStats, clearStatsForDate,
     notification, showNotification, hideNotification
   }), [data, history, stats, notification, addHistory, deleteHistory, clearHistory, updateStats, clearStatsForDate, showNotification, hideNotification]);
 
-  return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
 };
 
 const useAppContext = () => {
@@ -124,8 +116,7 @@ const useAppContext = () => {
   return context;
 };
 
-// --- Reusable UI Components ---
-
+// --- UI Components ---
 const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }> = ({ className = '', variant = 'primary', ...props }) => {
   const variants = {
     primary: 'bg-indigo-600 text-white active:bg-indigo-700 disabled:bg-slate-300',
@@ -133,48 +124,71 @@ const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant
     danger: 'bg-red-50 text-red-600 border border-red-200 active:bg-red-100',
     ghost: 'bg-transparent text-slate-600 active:bg-slate-100'
   };
-  return (
-    <button className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${variants[variant]} ${className}`} {...props} />
-  );
+  return <button className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${variants[variant]} ${className}`} {...props} />;
 };
 
 const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; required?: boolean }> = ({ label, required, className = '', ...props }) => (
   <div className="flex flex-col gap-2 w-full">
-    <label className="text-sm font-medium text-slate-700">
-      {label} {required && <span className="text-red-500">*</span>}
-    </label>
+    <label className="text-sm font-medium text-slate-700">{label} {required && <span className="text-red-500">*</span>}</label>
     <div className="relative">
-      <select className={`w-full appearance-none bg-white border border-slate-200 text-slate-900 text-base rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block p-3 pr-8 shadow-sm ${className}`} {...props}>
+      <select className={`w-full appearance-none bg-white border border-slate-200 text-slate-900 text-base rounded-lg focus:ring-2 focus:ring-indigo-500 block p-3 pr-8 shadow-sm ${className}`} {...props}>
         {props.children}
       </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-        <ChevronLeft className="h-5 w-5 -rotate-90" />
-      </div>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500"><ChevronLeft className="h-5 w-5 -rotate-90" /></div>
     </div>
   </div>
 );
 
+const NotificationToast = () => {
+  const { notification, hideNotification } = useAppContext();
+  if (!notification) return null;
+  const colors = {
+    success: 'bg-emerald-600',
+    error: 'bg-red-600',
+    info: 'bg-indigo-600'
+  };
+  return (
+    <div className={`fixed top-4 mt-safe left-4 right-4 z-[200] p-4 rounded-xl shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-top-4 fade-in duration-300 ${colors[notification.type]} text-white`}>
+      <div className="flex items-center gap-3">
+        {notification.type === 'success' ? <Check size={20} /> : notification.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
+        <span className="font-medium text-sm leading-tight">{notification.msg}</span>
+      </div>
+      <button onClick={hideNotification} className="p-1 rounded-full hover:bg-white/20"><X size={18} /></button>
+    </div>
+  );
+};
+
+const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom-20 duration-300 max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 sticky top-0 bg-white z-20">
+          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+};
+
+// --- Navigation ---
 const BottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  
   const navItems = [
     { path: '/', label: '首页', icon: Home },
     { path: '/feedback', label: '反馈', icon: ClipboardList },
     { path: '/history', label: '历史', icon: History },
     { path: '/management', label: '管理', icon: Database },
   ];
-
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 safe-area-bottom pb-safe flex justify-around items-center h-16 z-50">
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 safe-area-bottom pb-safe flex justify-around items-center h-16 z-50 shadow-[0_-1px_10px_rgba(0,0,0,0.05)]">
       {navItems.map((item) => {
         const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
         return (
-          <button
-            key={item.path}
-            onClick={() => navigate(item.path)}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}
-          >
+          <button key={item.path} onClick={() => navigate(item.path)} className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>
             <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
@@ -184,790 +198,264 @@ const BottomNav = () => {
   );
 };
 
-const NotificationToast = () => {
-  const { notification, hideNotification } = useAppContext();
-  if (!notification) return null;
-  return (
-    <div className={`fixed top-4 mt-safe left-4 right-4 z-[100] p-4 rounded-lg shadow-lg flex items-center justify-between gap-3 animate-in slide-in-from-top-2 fade-in duration-300 ${notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
-      <div className="flex items-center gap-3">
-        {notification.type === 'success' ? <Check size={20} /> : <X size={20} />}
-        <span className="font-medium text-sm">{notification.msg}</span>
-      </div>
-      <button 
-        onClick={hideNotification}
-        className="p-1 rounded-full hover:bg-white/20 transition-colors"
-      >
-        <X size={18} />
-      </button>
-    </div>
-  );
-};
-
-// --- Modal Component ---
-const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
-        <div className="flex justify-between items-center p-5 border-b border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-400">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="p-6">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // --- Views ---
 
-// 1. Home View (Stats)
+// 1. HomeView
 const HomeView = () => {
   const { stats, updateStats, clearStatsForDate, data, showNotification } = useAppContext();
-  
   const getTodayStr = () => {
     const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [activeCarModel, setActiveCarModel] = useState<string>(data.carModels[0]?.id || '');
-  
   const chartData = useMemo(() => {
     const dailyData = stats[selectedDate] || {};
-    return data.carModels.map(model => {
-      const modelStats = dailyData[model.id] || {};
-      const totalIssues = (Object.values(modelStats) as number[]).reduce((a, b) => a + b, 0);
-      return {
-        name: model.name,
-        count: totalIssues,
-        id: model.id
-      };
-    }).filter(d => d.count > 0);
+    return data.carModels.map(model => ({
+      name: model.name, id: model.id,
+      count: (Object.values(dailyData[model.id] || {}) as number[]).reduce((a, b) => a + b, 0)
+    })).filter(d => d.count > 0);
   }, [stats, selectedDate, data.carModels]);
-
-  const checkEditable = () => {
-    const todayStr = getTodayStr();
-    if (selectedDate !== todayStr) {
-       showNotification("只能编辑今日的统计数据", "error");
-       return false;
-    }
-    return true;
-  };
-
-  const handleClearStats = () => {
-    if (!checkEditable()) return;
-    if (window.confirm('确定要清空该日期的所有统计数据吗？此操作不可恢复。')) {
-      clearStatsForDate(selectedDate);
-      showNotification('数据已清空');
-    }
-  };
-
-  const handleIncrement = (issueId: string) => {
-    if (!activeCarModel) return;
-    if (!checkEditable()) return;
-    updateStats(selectedDate, activeCarModel, issueId, 1);
-  };
-
-  const handleDecrement = (issueId: string) => {
-    if (!activeCarModel) return;
-    if (!checkEditable()) return;
-    updateStats(selectedDate, activeCarModel, issueId, -1);
-  };
-
-  const getIssueCount = (issueId: string) => {
-    return stats[selectedDate]?.[activeCarModel]?.[issueId] || 0;
-  };
-
-  const getModelTotal = (modelId: string) => {
-    const modelStats = stats[selectedDate]?.[modelId] || {};
-    return (Object.values(modelStats) as number[]).reduce((a, b) => a + b, 0);
-  };
-
-  const activeIssues = data.issues
-    .map(issue => ({ ...issue, count: getIssueCount(issue.id) }))
-    .filter(i => i.count > 0);
-
+  const handleInc = (id: string) => selectedDate === getTodayStr() ? updateStats(selectedDate, activeCarModel, id, 1) : showNotification("只能编辑今日", "error");
+  const handleDec = (id: string) => selectedDate === getTodayStr() ? updateStats(selectedDate, activeCarModel, id, -1) : showNotification("只能编辑今日", "error");
+  const getModelTotal = (id: string) => (Object.values(stats[selectedDate]?.[id] || {}) as number[]).reduce((a, b) => a + b, 0);
   return (
-    <div className="flex flex-col h-full bg-slate-50">
-      <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-6 no-scrollbar">
-        <header className="flex justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-100">
-          <h1 className="text-lg font-bold text-slate-800">异常统计看板</h1>
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg">
-             <input 
-              type="date" 
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent border-none text-sm font-medium text-slate-600 outline-none"
-            />
-          </div>
-        </header>
-
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 h-64 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xs font-semibold text-slate-400">每日车型异常统计</h2>
-            {chartData.length > 0 && (
-              <button 
-                onClick={handleClearStats}
-                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
-                title="清空今日统计"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
-          <div className="flex-1 w-full min-h-0">
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.id === activeCarModel ? '#6366f1' : '#a5b4fc'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-slate-400 text-sm">该日期无数据</div>
-          )}
-          </div>
-        </div>
-
-        <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 select-none snap-x">
-          {data.carModels.map(model => {
-            const total = getModelTotal(model.id);
-            const isActive = activeCarModel === model.id;
-            return (
-              <button
-                key={model.id}
-                onClick={() => setActiveCarModel(model.id)}
-                className={`
-                  relative flex-shrink-0 w-24 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all snap-start
-                  ${isActive ? 'bg-indigo-50 border-2 border-indigo-500 shadow-sm' : 'bg-white border border-slate-200'}
-                `}
-              >
-                {total > 0 && (
-                  <span className="absolute top-1 right-1 bg-indigo-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
-                    {total}
-                  </span>
-                )}
-                <span className={`text-sm font-medium text-center px-1 truncate w-full ${isActive ? 'text-indigo-900' : 'text-slate-600'}`}>
-                  {model.name}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        
-        <p className="text-xs text-slate-400 text-center">
-          选择车型查看和添加异常问题 (每日0点自动初始化)
-        </p>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-6">
-          <div>
-            <h3 className="font-bold text-slate-800 mb-3 text-sm">已添加的问题</h3>
-            <div className="flex flex-wrap gap-2 min-h-[40px]">
-              {activeIssues.length === 0 && (
-                <span className="text-xs text-slate-400 py-2">暂无异常问题，请从下方选择添加</span>
-              )}
-              {activeIssues.map(item => (
-                <div key={item.id} className="bg-indigo-500 text-white pl-3 pr-2 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm animate-in fade-in zoom-in duration-200">
-                  <span>{item.name}</span>
-                  {item.count > 1 && <span className="text-indigo-200 text-xs">x{item.count}</span>}
-                  <button 
-                    onClick={() => handleDecrement(item.id)}
-                    className="p-0.5 hover:bg-white/20 rounded-full transition-colors"
-                  >
-                    <Minus size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="h-px bg-slate-100 w-full"></div>
-
-          <div>
-            <h3 className="font-bold text-slate-800 mb-3 text-sm">失效问题库</h3>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {data.issues.map(issue => (
-                <button
-                  key={issue.id}
-                  onClick={() => handleIncrement(issue.id)}
-                  className="py-2.5 px-1 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all active:scale-95 shadow-sm"
-                >
-                  {issue.name}
-                </button>
-              ))}
-            </div>
-          </div>
+    <div className="flex flex-col h-full bg-slate-50 overflow-y-auto no-scrollbar pb-24 p-4 space-y-6">
+      <header className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+        <h1 className="text-lg font-bold text-slate-800">统计看板</h1>
+        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-slate-50 border-none text-sm font-bold text-slate-600 p-1 rounded" />
+      </header>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 h-64">
+        <h2 className="text-xs font-semibold text-slate-400 mb-4">每日车型异常统计</h2>
+        {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" tick={{fontSize: 10}} axisLine={false} tickLine={false} /><YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} width={25} /><Tooltip /><Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]}>{chartData.map((e, i) => <Cell key={i} fill={e.id === activeCarModel ? '#6366f1' : '#a5b4fc'} />)}</Bar></BarChart>
+          </ResponsiveContainer>
+        ) : <div className="h-full flex items-center justify-center text-slate-400 text-sm">暂无数据</div>}
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
+        {data.carModels.map(m => (
+          <button key={m.id} onClick={() => setActiveCarModel(m.id)} className={`flex-shrink-0 w-24 h-14 rounded-xl flex flex-col items-center justify-center border-2 transition-all ${activeCarModel === m.id ? 'bg-indigo-50 border-indigo-500 text-indigo-900' : 'bg-white border-slate-100 text-slate-600'}`}>
+            <span className="text-xs font-bold truncate px-2">{m.name}</span>
+            {getModelTotal(m.id) > 0 && <span className="text-[10px] bg-indigo-500 text-white px-1.5 rounded-full mt-1">{getModelTotal(m.id)}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl p-5 space-y-6 shadow-sm">
+        <h3 className="text-sm font-bold text-slate-800">快速异常录入</h3>
+        <div className="grid grid-cols-3 gap-2">
+          {data.issues.map(i => (
+            <button key={i.id} onClick={() => handleInc(i.id)} className="py-3 bg-slate-50 rounded-xl text-xs font-medium text-slate-600 border border-slate-100 active:bg-indigo-50 active:text-indigo-600 active:border-indigo-200 transition-all">
+              {i.name}
+              {stats[selectedDate]?.[activeCarModel]?.[i.id] > 0 && <span className="ml-1 text-indigo-500 font-bold">({stats[selectedDate]?.[activeCarModel]?.[i.id]})</span>}
+            </button>
+          ))}
         </div>
       </div>
     </div>
   );
 };
 
+// 2. FeedbackView
 const FeedbackView = () => {
   const { data, addHistory, showNotification } = useAppContext();
   const [form, setForm] = useState<FeedbackForm>(DEFAULT_FORM);
-
   const findName = (list: BaseEntity[], id: string) => list.find(x => x.id === id)?.name || '未知';
   const findCode = (id: string) => data.productCodes.find(x => x.id === id)?.code || '未知';
-
-  const filteredProcesses = useMemo(() => data.processes.filter(p => p.departmentId === form.departmentId), [data.processes, form.departmentId]);
-  const filteredProducts = useMemo(() => data.productNames.filter(p => p.processId === form.processId), [data.productNames, form.processId]);
-  const filteredModels = useMemo(() => data.carModels.filter(m => m.productNameId === form.productNameId), [data.carModels, form.productNameId]);
-  const filteredCodes = useMemo(() => data.productCodes.filter(c => c.carModelId === form.carModelId), [data.productCodes, form.carModelId]);
+  
+  const filtered = {
+    processes: data.processes.filter(p => p.departmentId === form.departmentId),
+    products: data.productNames.filter(p => p.processId === form.processId),
+    models: data.carModels.filter(m => m.productNameId === form.productNameId),
+    codes: data.productCodes.filter(c => c.carModelId === form.carModelId)
+  };
 
   useEffect(() => {
-    setForm(f => ({
-      ...f,
-      departmentId: f.departmentId || data.departments[0]?.id || '',
-      issueId: f.issueId || data.issues[0]?.id || '',
-      reporterId: f.reporterId || data.reporters[0]?.id || ''
-    }));
-  }, [data.departments, data.issues, data.reporters]);
+    const firstDept = data.departments[0]?.id || '';
+    setForm(f => ({ ...f, departmentId: f.departmentId || firstDept, issueId: f.issueId || data.issues[0]?.id || '', reporterId: f.reporterId || data.reporters[0]?.id || '' }));
+  }, [data]);
 
-  useEffect(() => { 
-    const first = filteredProcesses[0]?.id || '';
-    setForm(f => ({ ...f, processId: first, productNameId: '', carModelId: '', productCodeId: '' }));
-  }, [form.departmentId, data.processes]);
-
-  useEffect(() => { 
-    const first = filteredProducts[0]?.id || '';
-    setForm(f => ({ ...f, productNameId: first, carModelId: '', productCodeId: '' }));
-  }, [form.processId, data.productNames]);
-
-  useEffect(() => { 
-    const first = filteredModels[0]?.id || '';
-    setForm(f => ({ ...f, carModelId: first, productCodeId: '' }));
-  }, [form.productNameId, data.carModels]);
-
-  useEffect(() => { 
-    const first = filteredCodes[0]?.id || '';
-    setForm(f => ({ ...f, productCodeId: first }));
-  }, [form.carModelId, data.productCodes]);
-
-  const toggleMeasure = (id: string) => {
-    setForm(prev => {
-      const exists = prev.measureIds.includes(id);
-      return {
-        ...prev,
-        measureIds: exists ? prev.measureIds.filter(m => m !== id) : [...prev.measureIds, id]
-      };
-    });
-  };
-
-  const generateText = () => {
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const qtyText = QUANTITY_PRESETS.find(q => q.value === form.quantityPreset)?.text || `${form.quantity} 件`;
-    const measuresText = form.measureIds.map(id => findName(data.measures, id)).join('、');
-
-    return `质量异常反馈：
-发现工序：${findName(data.processes, form.processId)}
-发现时间：${timeStr}
-责任部门：${findName(data.departments, form.departmentId)}
-车型：${findName(data.carModels, form.carModelId)}
-产品名称：${findName(data.productNames, form.productNameId)}
-${findCode(form.productCodeId)}
-失效问题：${findName(data.issues, form.issueId)}
-发现数量：${qtyText}
-问题等级：${form.grade}
-反馈人：${findName(data.reporters, form.reporterId)}
-处置措施：${measuresText}`;
-  };
+  useEffect(() => { setForm(f => ({ ...f, processId: filtered.processes[0]?.id || '', productNameId: '', carModelId: '', productCodeId: '' })); }, [form.departmentId]);
+  useEffect(() => { setForm(f => ({ ...f, productNameId: filtered.products[0]?.id || '', carModelId: '', productCodeId: '' })); }, [form.processId]);
+  useEffect(() => { setForm(f => ({ ...f, carModelId: filtered.models[0]?.id || '', productCodeId: '' })); }, [form.productNameId]);
+  useEffect(() => { setForm(f => ({ ...f, productCodeId: filtered.codes[0]?.id || '' })); }, [form.carModelId]);
 
   const handleSubmit = async () => {
-    if (!form.departmentId || !form.processId || !form.issueId) {
-      showNotification("请填写必填项", "error");
-      return;
-    }
-
-    const content = generateText();
+    if (!form.issueId || !form.processId) return showNotification("必填项未选", "error");
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-    
-    addHistory({
-      timestamp: Date.now(),
-      dateStr: dateStr,
-      timeStr: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
-      content,
-      formData: form
-    });
-
-    try {
-      await navigator.clipboard.writeText(content);
-      showNotification("已生成并复制！");
-    } catch (e) {
-      showNotification("已生成（复制失败）", "error");
-    }
+    const content = `质量异常反馈：\n发现工序：${findName(data.processes, form.processId)}\n时间：${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}\n车型：${findName(data.carModels, form.carModelId)}\n失效：${findName(data.issues, form.issueId)}\n处置：${form.measureIds.map(id => findName(data.measures, id)).join('、')}`;
+    addHistory({ timestamp: Date.now(), dateStr: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`, timeStr: `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`, content, formData: form });
+    try { await navigator.clipboard.writeText(content); showNotification("已生成并复制"); } catch { showNotification("已生成(请手动复制)", "info"); }
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50">
-      <div className="flex-1 overflow-y-auto p-4 pb-48 space-y-5">
-        <h1 className="text-xl font-bold text-slate-900 mb-2">新建质量反馈</h1>
-        
-        <div className="flex gap-4">
-          <Select label="责任部门" required value={form.departmentId} onChange={e => setForm({...form, departmentId: e.target.value})}>
-            <option value="">请选择部门</option>
-            {data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </Select>
-          <Select label="发现工序" required value={form.processId} onChange={e => setForm({...form, processId: e.target.value})} disabled={!form.departmentId}>
-            <option value="">请选择工序</option>
-            {filteredProcesses.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </div>
-
-        <div className="flex gap-4">
-          <Select label="产品名称" required value={form.productNameId} onChange={e => setForm({...form, productNameId: e.target.value})} disabled={!form.processId}>
-            <option value="">请选择产品</option>
-            {filteredProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          <Select label="车型" value={form.carModelId} onChange={e => setForm({...form, carModelId: e.target.value})} disabled={!form.productNameId}>
-            <option value="">请选择车型</option>
-            {filteredModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </Select>
-        </div>
-
-        <Select label="产品编码" value={form.productCodeId} onChange={e => setForm({...form, productCodeId: e.target.value})} disabled={!form.carModelId}>
-          <option value="">请选择编码</option>
-          {filteredCodes.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
-        </Select>
-
-        <div className="flex gap-4 items-start">
-          <div className="flex-1">
-            <Select label="失效问题" required value={form.issueId} onChange={e => setForm({...form, issueId: e.target.value})} className="text-center">
-              <option value="">请选择问题</option>
-              {data.issues.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </Select>
-          </div>
-          <div className="w-[140px] flex-none">
-            <label className="text-sm font-medium text-slate-700 block mb-2">问题等级 *</label>
-            <div className="flex bg-slate-200 p-1 rounded-lg h-[50px]">
-              {['V1', 'V2'].map(g => (
-                <button
-                  key={g}
-                  onClick={() => setForm({...form, grade: g as any})}
-                  className={`flex-1 rounded-md text-sm font-bold transition-all ${
-                    form.grade === g ? 'bg-white text-indigo-600 shadow-sm scale-95' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div>
-           <label className="text-sm font-medium text-slate-700 block mb-2">发现数量</label>
-           <div className="flex flex-wrap gap-3 items-center justify-center">
-             {QUANTITY_PRESETS.map(preset => {
-               const isCircle = ['1', '2', '3', '5'].includes(preset.value);
-               const isActive = form.quantityPreset === preset.value;
-               return (
-                 <button 
-                  key={preset.value} 
-                  onClick={() => setForm({...form, quantityPreset: preset.value as any, quantity: preset.value === 'Batch' ? 10 : parseInt(preset.value) || 1})}
-                  className={`
-                    flex items-center justify-center font-medium transition-all shadow-sm
-                    ${isCircle ? 'w-12 h-12 rounded-full' : 'h-12 px-6 rounded-2xl'}
-                    ${isActive 
-                      ? 'bg-indigo-600 text-white shadow-indigo-200 shadow-md transform scale-105' 
-                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                    }
-                  `}
-                 >
-                   {preset.value === 'Batch' ? preset.label : preset.value}
-                 </button>
-               );
-             })}
-           </div>
-        </div>
-
-        <div>
-           <label className="text-sm font-medium text-slate-700 block mb-2">处置措施 (可多选)</label>
-           <div className="flex flex-wrap gap-3 justify-center">
-             {data.measures.map(m => (
-               <button 
-                key={m.id} 
-                onClick={() => toggleMeasure(m.id)}
-                className={`
-                  px-5 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm
-                  ${form.measureIds.includes(m.id) 
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                    : 'bg-white text-slate-600 border border-slate-200'
-                  }
-                `}
-               >
-                 {m.name}
-               </button>
-             ))}
-           </div>
+    <div className="flex flex-col h-full bg-slate-50 p-4 pb-32 overflow-y-auto no-scrollbar space-y-4">
+      <h1 className="text-xl font-bold text-slate-900">质量反馈生成</h1>
+      <div className="grid grid-cols-2 gap-4">
+        <Select label="责任部门" value={form.departmentId} onChange={e => setForm({...form, departmentId: e.target.value})}>{data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>
+        <Select label="发现工序" value={form.processId} onChange={e => setForm({...form, processId: e.target.value})}>{filtered.processes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+      </div>
+      <Select label="产品名称" value={form.productNameId} onChange={e => setForm({...form, productNameId: e.target.value})}>{filtered.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+      <div className="grid grid-cols-2 gap-4">
+        <Select label="车型" value={form.carModelId} onChange={e => setForm({...form, carModelId: e.target.value})}>{filtered.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</Select>
+        <Select label="产品编码" value={form.productCodeId} onChange={e => setForm({...form, productCodeId: e.target.value})}>{filtered.codes.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}</Select>
+      </div>
+      <Select label="失效问题" value={form.issueId} onChange={e => setForm({...form, issueId: e.target.value})}>{data.issues.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</Select>
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-700">处置措施</label>
+        <div className="flex flex-wrap gap-2">
+          {data.measures.map(m => (
+            <button key={m.id} onClick={() => setForm(f => ({ ...f, measureIds: f.measureIds.includes(m.id) ? f.measureIds.filter(x => x !== m.id) : [...f.measureIds, m.id] }))} className={`px-4 py-2 rounded-xl text-xs font-medium border transition-all ${form.measureIds.includes(m.id) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>{m.name}</button>
+          ))}
         </div>
       </div>
-
-      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 z-40">
-        <Button onClick={handleSubmit} className="w-full h-12 text-lg shadow-lg shadow-indigo-200 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700">
-          生成并复制内容
-        </Button>
-      </div>
+      <div className="fixed bottom-20 left-4 right-4"><Button onClick={handleSubmit} className="w-full h-14 text-lg shadow-xl bg-gradient-to-r from-indigo-500 to-indigo-700">生成记录并复制</Button></div>
     </div>
   );
 };
 
-// 3. History View
+// 3. HistoryView (Export Optimized)
 const HistoryView = () => {
   const { history, deleteHistory, data, showNotification } = useAppContext();
-  const [searchTerm, setSearchTerm] = useState('');
   const [isExportModalOpen, setExportModalOpen] = useState(false);
   const [exportType, setExportType] = useState<'excel' | 'json' | null>(null);
+  const isRestricted = useMemo(() => { const ua = navigator.userAgent.toLowerCase(); return ua.includes('micromessenger') || ua.includes('dingtalk'); }, []);
 
-  const filtered = history.filter(h => 
-    h.content.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    h.dateStr.includes(searchTerm)
-  );
-
-  const getExportData = (type: 'excel' | 'json') => {
+  const getExportBlob = (type: 'excel' | 'json') => {
     if (type === 'json') {
-      const jsonStr = JSON.stringify(history, null, 2);
-      return { blob: new Blob([jsonStr], { type: 'application/json' }), ext: 'json', mime: 'application/json' };
+      return new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
     } else {
-      const findName = (list: BaseEntity[], id: string) => list.find(x => x.id === id)?.name || '未知';
-      const findCode = (id: string) => data.productCodes.find(x => x.id === id)?.code || '未知';
-      
-      const rows = history.map(h => {
-         const f = h.formData;
-         const measures = f.measureIds.map(mid => findName(data.measures, mid)).join(', ');
-         const qtyText = QUANTITY_PRESETS.find(q => q.value === f.quantityPreset)?.text || `${f.quantity}`;
-
-         return {
-           "记录ID": h.id, "发现日期": h.dateStr, "发现时间": h.timeStr,
-           "工序": findName(data.processes, f.processId), "责任部门": findName(data.departments, f.departmentId),
-           "车型": findName(data.carModels, f.carModelId), "产品名称": findName(data.productNames, f.productNameId),
-           "产品编码": findCode(f.productCodeId), "失效问题": findName(data.issues, f.issueId),
-           "处置措施": measures, "发现数量": qtyText, "问题等级": f.grade, "反馈人": findName(data.reporters, f.reporterId)
-         };
-      });
-
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "质量反馈记录");
-      const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      return { 
-        blob: new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 
-        ext: 'xlsx', 
-        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      };
+      const find = (list: BaseEntity[], id: string) => list.find(x => x.id === id)?.name || '未知';
+      const rows = history.map(h => ({
+        "日期": h.dateStr, "时间": h.timeStr, "工序": find(data.processes, h.formData.processId),
+        "车型": find(data.carModels, h.formData.carModelId), "问题": find(data.issues, h.formData.issueId),
+        "措施": h.formData.measureIds.map(id => find(data.measures, id)).join(',')
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Records");
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     }
   };
 
-  const handleShare = async () => {
-    if (!exportType) return;
-    const { blob, ext } = getExportData(exportType);
-    const fileName = `quality_report_${new Date().getTime()}.${ext}`;
+  const handleDownload = (blob: Blob, ext: string) => {
+    const filename = `quality_report_${Date.now()}.${ext}`;
     
-    if (navigator.share) {
-      try {
-        const file = new File([blob], fileName, { type: blob.type });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: '质量反馈报告' });
-          showNotification("已呼出分享面板");
-          setExportModalOpen(false);
-          return;
-        }
-      } catch (e) {
-        if ((e as Error).name !== 'AbortError') showNotification("分享失败，请尝试其他方式", "error");
-      }
+    // 方案一：Web Share API (如果支持)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: blob.type })] })) {
+      navigator.share({ files: [new File([blob], filename, { type: blob.type })], title: '质量报告' }).catch(() => {});
     }
-    showNotification("当前环境不支持分享文件", "error");
-  };
 
-  const handleOpenLink = () => {
-    if (!exportType) return;
-    const { blob, mime } = getExportData(exportType);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target?.result as string;
-      const newWin = window.open();
-      if (newWin) {
-        newWin.document.write(`<iframe src="${base64}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-        showNotification("已尝试在新窗口打开，请保存");
-      } else {
-        showNotification("新窗口被拦截，请手动允许浏览器弹窗", "error");
-      }
-    };
-    reader.readAsDataURL(blob);
-    setExportModalOpen(false);
-  };
-
-  const handleDirectDownload = () => {
-    if (!exportType) return;
-    const { blob, ext } = getExportData(exportType);
+    // 方案二：Blob URL (传统下载)
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `quality_report_${new Date().getTime()}.${ext}`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
-    showNotification("下载已尝试启动");
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    
+    showNotification("已尝试触发下载，请在“文件”或“下载”中查看", "info");
     setExportModalOpen(false);
   };
 
-  const handleCopyText = () => {
+  const handleBase64Download = () => {
     if (!exportType) return;
-    const content = exportType === 'json' ? JSON.stringify(history) : history.map(h => h.content).join('\n---\n');
-    navigator.clipboard.writeText(content);
-    showNotification("原始数据已复制到剪贴板");
+    const blob = getExportBlob(exportType);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      const a = document.createElement('a');
+      a.href = base64.replace(/^data:.*?;/, 'data:application/octet-stream;'); // 强制修改 MIME 为二进制流
+      a.download = `report_${Date.now()}.${exportType === 'excel' ? 'xlsx' : 'json'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+    reader.readAsDataURL(blob);
+    showNotification("已执行兼容模式下载协议", "info");
     setExportModalOpen(false);
   };
 
   return (
-    <div className="p-4 pb-24 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4">
+    <div className="flex flex-col h-full bg-slate-50 p-4 pb-24 space-y-4">
+      <div className="flex justify-between items-center">
         <h1 className="text-xl font-bold text-slate-900">历史记录</h1>
         <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => { setExportType('json'); setExportModalOpen(true); }} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
-              <FileJson size={20} className="text-orange-500" />
-            </Button>
-            <Button variant="ghost" onClick={() => { setExportType('excel'); setExportModalOpen(true); }} className="p-2 w-10 h-10 rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
-              <FileSpreadsheet size={20} className="text-emerald-600" />
-            </Button>
+          <button onClick={() => { setExportType('excel'); setExportModalOpen(true); }} className="p-2.5 bg-white border border-slate-200 rounded-full shadow-sm active:bg-slate-50"><FileSpreadsheet size={20} className="text-emerald-600" /></button>
+          <button onClick={() => { setExportType('json'); setExportModalOpen(true); }} className="p-2.5 bg-white border border-slate-200 rounded-full shadow-sm active:bg-slate-50"><FileJson size={20} className="text-orange-500" /></button>
         </div>
       </div>
-      
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input 
-          type="text" 
-          placeholder="搜索历史记录..." 
-          className="w-full bg-white border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-        />
-      </div>
-
       <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar">
-        {filtered.length === 0 && <div className="text-center text-slate-400 mt-10">未找到记录</div>}
-        {filtered.map(record => (
-          <div key={record.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-                <CalendarIcon size={12} />
-                <span>{record.dateStr}</span>
-                <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                <span>{record.timeStr}</span>
-              </div>
-              <button onClick={() => deleteHistory(record.id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                <Trash2 size={16} />
-              </button>
+        {history.length === 0 ? <div className="text-center text-slate-400 mt-20">暂无历史记录</div> : 
+          history.map(h => (
+            <div key={h.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative group">
+              <div className="flex justify-between text-[10px] text-slate-400 font-bold mb-2 uppercase tracking-wider"><span>{h.dateStr} {h.timeStr}</span><button onClick={() => deleteHistory(h.id)}><Trash2 size={14} className="text-slate-200 hover:text-red-400" /></button></div>
+              <p className="text-sm text-slate-700 font-mono whitespace-pre-wrap leading-relaxed">{h.content}</p>
+              <button onClick={() => navigator.clipboard.writeText(h.content).then(() => showNotification("已复制"))} className="mt-3 w-full py-2 bg-slate-50 rounded-lg text-xs font-bold text-indigo-600 active:bg-indigo-50 flex items-center justify-center gap-1"><Copy size={12} /> 再次复制</button>
             </div>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap font-mono bg-slate-50 p-3 rounded-md border border-slate-100">
-              {record.content}
-            </p>
-            <div className="mt-2 flex justify-end">
-               <button 
-                onClick={() => navigator.clipboard.writeText(record.content)}
-                className="text-xs font-medium text-indigo-600 flex items-center gap-1 active:text-indigo-800"
-               >
-                 <Copy size={12} /> 复制
-               </button>
-            </div>
-          </div>
-        ))}
+          ))
+        }
       </div>
 
-      <Modal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setExportModalOpen(false)} 
-        title={`导出 ${exportType === 'excel' ? 'Excel 表格' : 'JSON 数据'}`}
-      >
-        <div className="grid grid-cols-1 gap-4">
-          <button 
-            onClick={handleShare}
-            className="flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-all text-left"
-          >
+      <Modal isOpen={isExportModalOpen} onClose={() => setExportModalOpen(false)} title={`导出 ${exportType === 'excel' ? 'Excel 表格' : 'JSON 源码'}`}>
+        {isRestricted && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3">
+            <AlertCircle className="text-amber-500 shrink-0" size={20} />
+            <p className="text-xs text-amber-800 leading-normal">
+              <span className="font-bold">注意：</span>微信/钉钉内置浏览器通常无法直接保存文件。推荐点击右上角“<span className="font-bold">···</span>”选择“<span className="font-bold text-indigo-600">在浏览器打开</span>”后再进行导出。
+            </p>
+          </div>
+        )}
+        <div className="space-y-4">
+          <button onClick={() => handleDownload(getExportBlob(exportType!), exportType === 'excel' ? 'xlsx' : 'json')} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-left active:scale-[0.98] transition-all">
             <div className="p-3 bg-indigo-500 text-white rounded-xl"><Share2 size={24} /></div>
-            <div>
-              <div className="font-bold text-slate-800">发送到好友/微信</div>
-              <div className="text-xs text-slate-500">通过系统分享面板发送文件</div>
-            </div>
+            <div><div className="font-bold text-slate-800 text-sm">正式导出 / 发送</div><div className="text-[10px] text-slate-500">通过系统原生面板保存或分享文件</div></div>
           </button>
-
-          <button 
-            onClick={handleOpenLink}
-            className="flex items-center gap-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-all text-left"
-          >
-            <div className="p-3 bg-emerald-500 text-white rounded-xl"><ExternalLink size={24} /></div>
-            <div>
-              <div className="font-bold text-slate-800">浏览器新窗口打开</div>
-              <div className="text-xs text-slate-500">尝试在独立窗口中预览并保存文件</div>
-            </div>
+          <button onClick={handleBase64Download} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-left active:scale-[0.98] transition-all">
+            <div className="p-3 bg-emerald-500 text-white rounded-xl"><Download size={24} /></div>
+            <div><div className="font-bold text-slate-800 text-sm">二进制流强制下载</div><div className="text-[10px] text-slate-500">如果第一种方式失效，请尝试此协议</div></div>
           </button>
-
-          <button 
-            onClick={handleDirectDownload}
-            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all text-left"
-          >
-            <div className="p-3 bg-slate-600 text-white rounded-xl"><Download size={24} /></div>
-            <div>
-              <div className="font-bold text-slate-800">直接下载到设备</div>
-              <div className="text-xs text-slate-500">传统的网页下载方式 (部分内置浏览器可能失效)</div>
-            </div>
-          </button>
-
-          <button 
-            onClick={handleCopyText}
-            className="flex items-center gap-4 p-4 rounded-2xl bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-all text-left"
-          >
-            <div className="p-3 bg-orange-500 text-white rounded-xl"><Copy size={24} /></div>
-            <div>
-              <div className="font-bold text-slate-800">拷贝原始数据</div>
-              <div className="text-xs text-slate-500">将纯文本数据复制到剪贴板</div>
-            </div>
-          </button>
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+            <div className="flex items-center gap-2 mb-2 text-slate-600"><Smartphone size={16} /><span className="text-xs font-bold">文件去哪了？</span></div>
+            <ul className="text-[10px] text-slate-500 list-disc pl-4 space-y-1">
+              <li>安卓：请检查“文件管理/Download”或浏览器默认下载路径。</li>
+              <li>苹果：点击导出后选择“存储到文件”，然后在桌面“文件”App中找。</li>
+              <li>若导出无反应：请务必按照顶部黄色区域提示切换到系统浏览器操作。</li>
+            </ul>
+          </div>
         </div>
       </Modal>
     </div>
   );
 };
 
-// 4. Management View with Extracted Editor Component to Prevent Re-mounts
+// 4. Management Screen
 interface EditorProps<T extends BaseEntity> {
   title: string;
   items: T[];
-  onAdd: (name: string, parentId?: string, secondaryParentId?: string) => void;
+  onAdd: (name: string, pid?: string) => void;
   onDelete: (id: string) => void;
   onBack: () => void;
-  parentIdKey?: string;
   parentList?: BaseEntity[];
-  secondaryParentIdKey?: string;
-  secondaryParentList?: BaseEntity[];
+  parentIdKey?: string;
 }
-
-function Editor<T extends BaseEntity>({ 
-  title, items, onAdd, onDelete, onBack, parentIdKey, parentList, secondaryParentIdKey, secondaryParentList 
-}: EditorProps<T>) {
-  const { showNotification } = useAppContext();
-  const [newName, setNewName] = useState('');
-  const [selectedParent, setSelectedParent] = useState('');
-  const [filterParent, setFilterParent] = useState('');
-
-  useEffect(() => {
-    if (!secondaryParentList) return;
-    const isValid = filterParent && secondaryParentList.some(p => p.id === filterParent);
-    if (!isValid) {
-      if (secondaryParentList.length > 0) setFilterParent(secondaryParentList[0].id);
-      else setFilterParent('');
-    }
-  }, [secondaryParentList, filterParent]);
-
-  useEffect(() => {
-      if (!parentList) return;
-      let filtered = parentList;
-      if (secondaryParentIdKey && filterParent) filtered = parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
-      const isValid = selectedParent && filtered.some(p => p.id === selectedParent);
-      if (!isValid) {
-          if (filtered.length > 0) setSelectedParent(filtered[0].id);
-          else setSelectedParent('');
-      }
-  }, [parentList, filterParent, secondaryParentIdKey, selectedParent]);
-
-  const effectiveParentList = useMemo(() => {
-    if (secondaryParentIdKey && parentList) return parentList.filter(p => (p as any)[secondaryParentIdKey] === filterParent);
-    return parentList;
-  }, [parentList, filterParent, secondaryParentIdKey]);
-
-  const handleAdd = () => {
-    if (!newName.trim()) return;
-    const trimmedName = newName.trim();
-    const siblings = items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent);
-    const isDuplicate = siblings.some(i => (i.name || (i as any).code) === trimmedName);
-    if (isDuplicate) { showNotification("该名称已存在，请勿重复添加", "error"); return; }
-    if (parentIdKey && !selectedParent) { showNotification("请选择上级分类", "error"); return; }
-    onAdd(trimmedName, selectedParent);
-    setNewName('');
-    showNotification("添加成功");
-  };
-
-  const handleCopy = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); showNotification(`已复制: ${text}`); } catch (err) { showNotification("复制失败", "error"); }
-  };
-
+function Editor<T extends BaseEntity>({ title, items, onAdd, onDelete, onBack, parentList, parentIdKey }: EditorProps<T>) {
+  const [name, setName] = useState('');
+  const [pid, setPid] = useState('');
+  useEffect(() => { if (parentList?.length && !pid) setPid(parentList[0].id); }, [parentList]);
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 mb-6">
-        <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full">
-          <ChevronLeft size={24} />
-        </button>
-        <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+    <div className="flex flex-col h-full bg-slate-50 p-4 space-y-4">
+      <div className="flex items-center gap-2"><button onClick={onBack} className="p-2 -ml-2"><ChevronLeft /></button><h1 className="text-xl font-bold">{title}</h1></div>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+        {parentList && <Select label="上级分类" value={pid} onChange={e => setPid(e.target.value)}>{parentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>}
+        <div className="flex gap-2"><input value={name} onChange={e => setName(e.target.value)} className="flex-1 bg-slate-50 p-3 rounded-xl border-none outline-none text-sm" placeholder="输入名称..." /><Button onClick={() => { if (name.trim()) { onAdd(name.trim(), pid); setName(''); } }} className="w-12 h-12 p-0 rounded-xl"><Plus /></Button></div>
       </div>
-
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 space-y-3">
-        {secondaryParentList && (
-           <Select label="筛选: 所属车型" value={filterParent} onChange={e => setFilterParent(e.target.value)}>
-              {secondaryParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-           </Select>
-        )}
-
-        {parentList && (
-           <Select label="上级分类" value={selectedParent} onChange={e => setSelectedParent(e.target.value)}>
-              {effectiveParentList && effectiveParentList.length > 0 ? (
-                  effectiveParentList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-              ) : (
-                  <option value="" disabled>暂无选项 (请先添加上级数据)</option>
-              )}
-           </Select>
-        )}
-        
-        <div className="flex gap-2">
-          <input 
-            className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm outline-none focus:border-indigo-500"
-            placeholder={'请输入名称/代码...'}
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-          />
-          <Button onClick={handleAdd} className="w-12 h-10 p-0"><Plus size={20} /></Button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-        {items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent).map(item => (
-          <div key={item.id} className="bg-white p-3 rounded-lg border border-slate-100 flex justify-between items-center group">
-            <span 
-              className="font-medium text-slate-700 flex-1 cursor-pointer active:text-indigo-600 transition-colors"
-              onClick={() => handleCopy(item.name || (item as any).code)}
-            >
-              {item.name || (item as any).code}
-            </span>
-            <button onClick={() => onDelete(item.id)} className="text-slate-300 hover:text-red-500 p-2">
-              <Trash2 size={16} />
-            </button>
-          </div>
+      <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar">
+        {items.filter(i => !parentIdKey || (i as any)[parentIdKey] === pid).map(i => (
+          <div key={i.id} className="bg-white p-4 rounded-xl flex justify-between items-center shadow-sm border border-slate-50"><span className="text-sm font-medium">{i.name || (i as any).code}</span><button onClick={() => onDelete(i.id)} className="p-2 text-slate-200 hover:text-red-400 transition-colors"><Trash2 size={18} /></button></div>
         ))}
-        {items.filter(i => !parentIdKey || (i as any)[parentIdKey as any] === selectedParent).length === 0 && (
-          <div className="text-center text-slate-400 text-sm mt-8">暂无数据</div>
-        )}
       </div>
     </div>
   );
@@ -975,78 +463,41 @@ function Editor<T extends BaseEntity>({
 
 const ManagementScreen = () => {
   const { data, setData } = useAppContext();
-  const [currentView, setCurrentView] = useState<ManagementViewType>('menu');
+  const [view, setView] = useState<ManagementViewType>('menu');
   const genId = () => Math.random().toString(36).substr(2, 9);
-  
-  const renderContent = () => {
-    switch(currentView) {
-      case 'menu':
-        const menuItems: { id: ManagementViewType, label: string, count: number }[] = [
-          { id: 'departments', label: '部门管理', count: data.departments.length },
-          { id: 'processes', label: '工序管理', count: data.processes.length },
-          { id: 'products', label: '产品名称管理', count: data.productNames.length },
-          { id: 'models', label: '车型管理', count: data.carModels.length },
-          { id: 'codes', label: '产品编码管理', count: data.productCodes.length },
-          { id: 'issues', label: '失效模式管理', count: data.issues.length },
-          { id: 'reporters', label: '反馈人管理', count: data.reporters.length },
-          { id: 'measures', label: '处置措施管理', count: data.measures.length },
-        ];
-        return (
-          <div className="space-y-4">
-            <h1 className="text-xl font-bold text-slate-900 mb-6">数据字典管理</h1>
-            <div className="grid grid-cols-2 gap-3">
-              {menuItems.map(item => (
-                <button 
-                  key={item.id}
-                  onClick={() => setCurrentView(item.id)}
-                  className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-start hover:border-indigo-200 hover:shadow-md transition-all active:scale-95 text-left"
-                >
-                  <span className="font-bold text-slate-700">{item.label}</span>
-                  <span className="text-xs text-slate-400 mt-1">{item.count} 项</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      
-      case 'departments': return <Editor key="departments" onBack={() => setCurrentView('menu')} title="部门管理" items={data.departments} onAdd={(name) => setData(d => ({ ...d, departments: [...d.departments, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, departments: d.departments.filter(x => x.id !== id) }))} />;
-      case 'processes': return <Editor key="processes" onBack={() => setCurrentView('menu')} title="工序管理" items={data.processes} parentIdKey="departmentId" parentList={data.departments} onAdd={(name, pid) => setData(d => ({ ...d, processes: [...d.processes, { id: genId(), name, departmentId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, processes: d.processes.filter(x => x.id !== id) }))} />;
-      case 'products': return <Editor key="products" onBack={() => setCurrentView('menu')} title="产品名称管理" items={data.productNames} parentIdKey="processId" parentList={data.processes} onAdd={(name, pid) => setData(d => ({ ...d, productNames: [...d.productNames, { id: genId(), name, processId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, productNames: d.productNames.filter(x => x.id !== id) }))} />;
-      case 'models': return <Editor key="models" onBack={() => setCurrentView('menu')} title="车型管理" items={data.carModels} parentIdKey="productNameId" parentList={data.productNames} onAdd={(name, pid) => setData(d => ({ ...d, carModels: [...d.carModels, { id: genId(), name, productNameId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, carModels: d.carModels.filter(x => x.id !== id) }))} />;
-      case 'codes': return <Editor key="codes" onBack={() => setCurrentView('menu')} title="产品编码管理" items={data.productCodes.map(c => ({...c, name: c.code}))} parentIdKey="carModelId" parentList={data.carModels} onAdd={(code, pid) => setData(d => ({ ...d, productCodes: [...d.productCodes, { id: genId(), code, carModelId: pid! }] }))} onDelete={(id) => setData(d => ({ ...d, productCodes: d.productCodes.filter(x => x.id !== id) }))} />;
-      case 'issues': return <Editor key="issues" onBack={() => setCurrentView('menu')} title="失效模式管理" items={data.issues} onAdd={(name) => setData(d => ({ ...d, issues: [...d.issues, { id: genId(), name }] }))} onDelete={(id) => setData(d => ({ ...d, issues: d.issues.filter(x => x.id !== id) }))} />;
-      case 'reporters': return <Editor key="reporters" onBack={() => setCurrentView('menu')} title="反馈人管理" items={data.reporters} onAdd={(name) => setData(d => ({...d, reporters: [...d.reporters, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, reporters: d.reporters.filter(x => x.id !== id)}))} />;
-      case 'measures': return <Editor key="measures" onBack={() => setCurrentView('menu')} title="处置措施管理" items={data.measures} onAdd={(name) => setData(d => ({...d, measures: [...d.measures, {id:genId(), name}]}))} onDelete={id => setData(d => ({...d, measures: d.measures.filter(x => x.id !== id)}))} />;
-      default: return null;
-    }
-  };
-
-  return <div className="p-4 pb-24 h-full">{renderContent()}</div>;
+  const menus: { id: ManagementViewType, label: string }[] = [
+    { id: 'departments', label: '部门' }, { id: 'processes', label: '工序' }, { id: 'products', label: '产品' }, { id: 'models', label: '车型' }, { id: 'codes', label: '编码' }, { id: 'issues', label: '失效' }, { id: 'reporters', label: '反馈人' }, { id: 'measures', label: '措施' }
+  ];
+  if (view === 'menu') return (
+    <div className="p-4 bg-slate-50 h-full overflow-y-auto no-scrollbar pb-24"><h1 className="text-xl font-bold mb-6">字典管理</h1><div className="grid grid-cols-2 gap-3">{menus.map(m => <button key={m.id} onClick={() => setView(m.id)} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 text-left active:scale-95 transition-all"><span className="font-bold text-slate-700">{m.label}管理</span></button>)}</div></div>
+  );
+  const back = () => setView('menu');
+  switch (view) {
+    case 'departments': return <Editor onBack={back} title="部门" items={data.departments} onAdd={n => setData(d => ({...d, departments: [...d.departments, {id: genId(), name: n}]}))} onDelete={id => setData(d => ({...d, departments: d.departments.filter(x => x.id !== id)}))} />;
+    case 'processes': return <Editor onBack={back} title="工序" items={data.processes} parentIdKey="departmentId" parentList={data.departments} onAdd={(n, p) => setData(d => ({...d, processes: [...d.processes, {id: genId(), name: n, departmentId: p!}]}))} onDelete={id => setData(d => ({...d, processes: d.processes.filter(x => x.id !== id)}))} />;
+    case 'products': return <Editor onBack={back} title="产品" items={data.productNames} parentIdKey="processId" parentList={data.processes} onAdd={(n, p) => setData(d => ({...d, productNames: [...d.productNames, {id: genId(), name: n, processId: p!}]}))} onDelete={id => setData(d => ({...d, productNames: d.productNames.filter(x => x.id !== id)}))} />;
+    case 'models': return <Editor onBack={back} title="车型" items={data.carModels} parentIdKey="productNameId" parentList={data.productNames} onAdd={(n, p) => setData(d => ({...d, carModels: [...d.carModels, {id: genId(), name: n, productNameId: p!}]}))} onDelete={id => setData(d => ({...d, carModels: d.carModels.filter(x => x.id !== id)}))} />;
+    case 'codes': return <Editor onBack={back} title="编码" items={data.productCodes.map(c => ({...c, name: c.code}))} parentIdKey="carModelId" parentList={data.carModels} onAdd={(n, p) => setData(d => ({...d, productCodes: [...d.productCodes, {id: genId(), code: n, carModelId: p!}]}))} onDelete={id => setData(d => ({...d, productCodes: d.productCodes.filter(x => x.id !== id)}))} />;
+    case 'issues': return <Editor onBack={back} title="失效" items={data.issues} onAdd={n => setData(d => ({...d, issues: [...d.issues, {id: genId(), name: n}]}))} onDelete={id => setData(d => ({...d, issues: d.issues.filter(x => x.id !== id)}))} />;
+    case 'reporters': return <Editor onBack={back} title="反馈人" items={data.reporters} onAdd={n => setData(d => ({...d, reporters: [...d.reporters, {id: genId(), name: n}]}))} onDelete={id => setData(d => ({...d, reporters: d.reporters.filter(x => x.id !== id)}))} />;
+    case 'measures': return <Editor onBack={back} title="措施" items={data.measures} onAdd={n => setData(d => ({...d, measures: [...d.measures, {id: genId(), name: n}]}))} onDelete={id => setData(d => ({...d, measures: d.measures.filter(x => x.id !== id)}))} />;
+    default: return null;
+  }
 };
 
-// --- Main App Component ---
-const AppContent = () => {
-  return (
-    <>
-      <Routes>
-        <Route path="/" element={<HomeView />} />
-        <Route path="/feedback" element={<FeedbackView />} />
-        <Route path="/history" element={<HistoryView />} />
-        <Route path="/management" element={<ManagementScreen />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <BottomNav />
-      <NotificationToast />
-    </>
-  );
-};
+// --- App Root ---
+const AppContent = () => (
+  <div className="h-full w-full relative">
+    <Routes>
+      <Route path="/" element={<HomeView />} />
+      <Route path="/feedback" element={<FeedbackView />} />
+      <Route path="/history" element={<HistoryView />} />
+      <Route path="/management" element={<ManagementScreen />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+    <BottomNav />
+    <NotificationToast />
+  </div>
+);
 
-export default function App() {
-  return (
-    <HashRouter>
-      <AppProvider>
-        <AppContent />
-      </AppProvider>
-    </HashRouter>
-  );
-}
+export default function App() { return <HashRouter><AppProvider><AppContent /></AppProvider></HashRouter>; }
